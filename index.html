@@ -9,6 +9,12 @@
 <script src="radiacode.js"></script>
 </head>
 <style>
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
+  background-color: #f8f9fa;
+  margin: 0;
+  padding: 20px;
+}
 #app > div {
   margin: 5px auto;
   width: 80%;
@@ -94,6 +100,38 @@
 .auto-update-controls {
   margin: 10px 0;
 }
+.device-info {
+  background: #e8f4f8;
+  padding: 15px;
+  border-radius: 8px;
+  margin-bottom: 20px;
+  border: 1px solid #b8daff;
+}
+.device-info h3 {
+  margin-top: 0;
+  color: #0c5460;
+}
+.device-info-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+.device-info-item {
+  background: white;
+  padding: 10px;
+  border-radius: 5px;
+  border: 1px solid #d1ecf1;
+}
+.device-info-item label {
+  font-weight: bold;
+  color: #0c5460;
+  display: block;
+  margin-bottom: 5px;
+}
+.device-info-item span {
+  color: #495057;
+}
 </style>
 <body>
 <div id="app">
@@ -133,6 +171,29 @@
     <div class="log" v-if="logMessages.length > 0">
       <div v-for="msg in logMessages" :key="msg.id">
         <span style="color: #666;">{{ msg.timestamp }}</span> {{ msg.message }}
+      </div>
+    </div>
+  </div>
+
+  <!-- Device Information -->
+  <div class="device-info" v-if="isConnected">
+    <h3>📊 Device Information</h3>
+    <div class="device-info-grid">
+      <div class="device-info-item">
+        <label>Serial Number:</label>
+        <span>{{ deviceInfo.serialNumber || 'Loading...' }}</span>
+      </div>
+      <div class="device-info-item">
+        <label>Firmware Version:</label>
+        <span>{{ deviceInfo.firmwareVersion || 'Loading...' }}</span>
+      </div>
+      <div class="device-info-item">
+        <label>Connection Type:</label>
+        <span>{{ deviceInfo.connectionType || 'Unknown' }}</span>
+      </div>
+      <div class="device-info-item">
+        <label>Last Update:</label>
+        <span>{{ deviceInfo.lastUpdate || 'Never' }}</span>
       </div>
     </div>
   </div>
@@ -198,6 +259,14 @@ var app = new Vue({
       isConnecting: false,
       connectionStatus: 'Disconnected',
       connectionStatusText: 'Not connected to device',
+      
+      // Device information
+      deviceInfo: {
+        firmwareVersion: null,
+        serialNumber: null,
+        connectionType: null,
+        lastUpdate: null
+      },
       
       // Auto-update functionality
       autoUpdateEnabled: false,
@@ -302,6 +371,7 @@ var app = new Vue({
         this.isConnected = true;
         this.connectionStatus = 'Connected';
         this.connectionStatusText = 'Connected via Bluetooth';
+        this.deviceInfo.connectionType = 'Bluetooth';
         this.log('✅ Connected successfully via Bluetooth');
         window.device = this.device; // For debugging
         await this.initializeDevice();
@@ -333,6 +403,7 @@ var app = new Vue({
         this.isConnected = true;
         this.connectionStatus = 'Connected';
         this.connectionStatusText = 'Connected via USB';
+        this.deviceInfo.connectionType = 'USB';
         this.log('✅ Connected successfully via USB');
         
         await this.initializeDevice();
@@ -352,10 +423,12 @@ var app = new Vue({
         // Get device info sequentially to avoid GATT conflicts
         this.log('Getting firmware version...');
         const version = await this.device.getFirmwareVersion();
-        this.log(`Firmware: v${version.target.major}.${version.target.minor}`);
+        this.deviceInfo.firmwareVersion = `v${version.target.major}.${version.target.minor}`;
+        this.log(`Firmware: ${this.deviceInfo.firmwareVersion}`);
         
         this.log('Getting serial number...');
         const serial = await this.device.getSerialNumber();
+        this.deviceInfo.serialNumber = serial;
         this.log(`Device: ${serial}`);
         
         // Test data buffer to see what we get
@@ -405,6 +478,14 @@ var app = new Vue({
         this.connectionStatus = 'Disconnected';
         this.connectionStatusText = 'Not connected to device';
         
+        // Clear device information
+        this.deviceInfo = {
+          firmwareVersion: null,
+          serialNumber: null,
+          connectionType: null,
+          lastUpdate: null
+        };
+        
       } catch (error) {
         this.log(`❌ Disconnect failed: ${error.message}`);
       }
@@ -445,6 +526,9 @@ var app = new Vue({
             // Add to rates series
             this.rates_series[0].data.push([now, record.count_rate]);
             this.rates_series[1].data.push([now, record.dose_rate]);
+            
+            // Update last update time
+            this.deviceInfo.lastUpdate = new Date().toLocaleTimeString();
             
             // Keep only last 100 data points
             if (this.rates_series[0].data.length > 100) {
