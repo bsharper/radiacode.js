@@ -8,8 +8,9 @@ This project is based on [https://github.com/cdump/radiacode](https://github.com
 
 ## Usage
 
-1. Open `index.html` in a Chrome-based browser (Chrome, Edge, or other Chromium-based browsers)
-2. Click "Connect Bluetooth" to connect to your RadiaCode device
+1. Clone this repo: `git clone https://github.com/bsharper/radiacode-web`
+2. Open `index.html` in a Chrome-based browser (Chrome, Edge, or other Chromium-based browsers)
+3. Click "Connect Bluetooth" to connect to your RadiaCode device
 
 ## Requirements
 
