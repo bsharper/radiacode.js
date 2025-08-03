@@ -71,6 +71,13 @@ class TimeoutError extends Error {
     }
 }
 
+class MultipleUSBReadFailure extends Error {
+    constructor(message) {
+        super(message || 'Multiple USB Read Failures');
+        this.name = 'MultipleUSBReadFailure';
+    }
+}
+
 /**
  * BytesBuffer - A utility class for handling binary data similar to the Python version
  */
@@ -487,9 +494,9 @@ class RadiaCodeUSBTransport extends RadiaCodeTransport {
         this.interface = null;
         this.serialNumber = serialNumber;
         this.timeoutMs = timeoutMs;
-        // Default endpoint numbers - will be updated during connection
-        this.endpointOut = 1;    // Default write endpoint (without direction bit)
-        this.endpointIn = 1;     // Default read endpoint (without direction bit) 
+        // Fixed endpoint numbers matching Python implementation
+        this.endpointOut = 1;    // Write endpoint (0x1 in Python)
+        this.endpointIn = 1;     // Read endpoint (0x81 in Python, but WebUSB uses just the number)
     }
 
     static isSupported() {
@@ -522,9 +529,9 @@ class RadiaCodeUSBTransport extends RadiaCodeTransport {
             this.interface = this.device.configuration.interfaces[0];
             await this.device.claimInterface(this.interface.interfaceNumber);
 
-            // Find the correct endpoints from the interface descriptor
+            // Log interface configuration for debugging
             const alternate = this.interface.alternates[0];
-            console.log('Interface configuration:', {
+            console.log('📋 Interface configuration:', {
                 interfaceNumber: this.interface.interfaceNumber,
                 alternateCount: this.interface.alternates.length,
                 endpoints: alternate.endpoints.map(ep => ({
@@ -535,27 +542,17 @@ class RadiaCodeUSBTransport extends RadiaCodeTransport {
                 }))
             });
             
-            // Find OUT endpoint (for writing to device)
-            const outEndpoint = alternate.endpoints.find(ep => ep.direction === 'out');
-            if (outEndpoint) {
-                this.endpointOut = outEndpoint.endpointNumber;
-                console.log('Found OUT endpoint:', this.endpointOut);
-            } else {
-                console.warn('No OUT endpoint found, using default 1');
-                this.endpointOut = 1;
-            }
-            
-            // Find IN endpoint (for reading from device)  
-            const inEndpoint = alternate.endpoints.find(ep => ep.direction === 'in');
-            if (inEndpoint) {
-                this.endpointIn = inEndpoint.endpointNumber;
-                console.log('Found IN endpoint:', this.endpointIn);
-            } else {
-                console.warn('No IN endpoint found, using default 1');
-                this.endpointIn = 1;
-            }
+            // Use fixed endpoints like Python implementation
+            // Python uses 0x1 for write and 0x81 for read
+            // In WebUSB, we just use the endpoint number without direction bits
+            this.endpointOut = 1;
+            this.endpointIn = 1;
+            console.log(`🔌 Using fixed endpoints: OUT=${this.endpointOut}, IN=${this.endpointIn}`);
 
-            await this.clearPendingData();
+
+            // HACK: not sure why this isn't needed, but it makes things work if I comment it out
+
+            //await this.clearPendingData();
 
             // Add a small delay to ensure device is ready
             await new Promise(resolve => setTimeout(resolve, 50));
@@ -573,42 +570,46 @@ class RadiaCodeUSBTransport extends RadiaCodeTransport {
     async clearPendingData() {
         console.log(`Clearing pending data from USB device...`);
         let clearedBytes = 0;
+        let attempts = 0;
         
         try {
+            // Match Python implementation exactly: keep reading until timeout
             while (true) {
-                // Use a very short timeout (100ms) like Python implementation
-                const timeoutPromise = new Promise((_, reject) => 
-                    setTimeout(() => reject(new Error('Timeout')), 100)
-                );
-                
-                const transferPromise = this.device.transferIn(this.endpointIn, 256);
-                
+                attempts++;
                 try {
-                    const result = await Promise.race([transferPromise, timeoutPromise]);
+                    console.log(`Clear attempt ${attempts}: reading pending data...`);
+                    
+                    // Use 256 bytes like Python implementation, with 100ms timeout
+                    const result = await this.device.transferIn(this.endpointIn, 256);
                     
                     if (result.status !== 'ok') {
-                        console.log('USB transfer not OK, stopping clear operation');
+                        console.log(`Clear attempt ${attempts}: USB transfer status not OK (${result.status}), stopping`);
                         break;
                     }
                     
-                    if (result.data.byteLength > 0) {
+                    if (result.data && result.data.byteLength > 0) {
                         clearedBytes += result.data.byteLength;
-                        console.log(`Cleared ${result.data.byteLength} bytes (total: ${clearedBytes})`);
+                        console.log(`Clear attempt ${attempts}: cleared ${result.data.byteLength} bytes (total: ${clearedBytes})`);
+                        // Continue loop - there might be more data
                     } else {
-                        // Empty response, keep trying until timeout
-                        console.log('Empty response, continuing...');
+                        console.log(`Clear attempt ${attempts}: no data received, buffer is empty`);
+                        break;
                     }
-                } catch (timeoutError) {
-                    // Timeout is expected - it means no more data is available
+                } catch (error) {
+                    // This is expected when no more data - equivalent to USBTimeoutError in Python
+                    console.log(`Clear attempt ${attempts}: ${error.message} - no more data available`);
                     break;
                 }
             }
         } catch (error) {
-            // Any other error should also stop the clearing process
-            console.log(`Clear operation ended with error: ${error.message}`);
+            console.log(`Clear operation failed: ${error.message}`);
         }
         
-        console.log(`Finished clearing pending data (total: ${clearedBytes} bytes cleared)`);
+        if (clearedBytes > 0) {
+            console.log(`✅ Cleared ${clearedBytes} bytes of pending data in ${attempts} attempts`);
+        } else {
+            console.log(`✅ No pending data found (checked in ${attempts} attempts)`);
+        }
     }
 
     async send(data) {
@@ -638,8 +639,9 @@ class RadiaCodeUSBTransport extends RadiaCodeTransport {
         if (this.isClosing) throw new ConnectionClosed('Connection is closing');
 
         try {
-            const maxTrials = 3;
+            // Simplified approach matching Python implementation more closely
             let trials = 0;
+            const maxTrials = 3;
             let initialData;
 
             // Create a timeout promise for the entire operation
@@ -647,11 +649,12 @@ class RadiaCodeUSBTransport extends RadiaCodeTransport {
                 setTimeout(() => reject(new TimeoutError(`USB read timeout after ${timeout}ms`)), timeout)
             );
 
+            // First, try to read initial data with retries like Python implementation
             while (trials < maxTrials) {
                 try {
                     console.log(`Attempting to read from endpoint ${this.endpointIn}, trial ${trials + 1}`);
                     
-                    // Race the USB transfer against the timeout
+                    // Use 256 bytes like Python implementation (this is buffer size, not packet size)
                     const transferPromise = this.device.transferIn(this.endpointIn, 256);
                     const result = await Promise.race([transferPromise, timeoutPromise]);
                     
@@ -670,10 +673,13 @@ class RadiaCodeUSBTransport extends RadiaCodeTransport {
                         await new Promise(resolve => setTimeout(resolve, 10));
                     }
                 } catch (error) {
+                    if (error instanceof TimeoutError) {
+                        throw error; // Don't retry on timeout
+                    }
                     console.error(`Trial ${trials + 1} failed:`, error);
                     trials++;
                     if (trials >= maxTrials) {
-                        throw error;
+                        throw new MultipleUSBReadFailure(`${trials} USB Read Failures in sequence`);
                     }
                     // Add a small delay before retrying
                     await new Promise(resolve => setTimeout(resolve, 10));
@@ -681,7 +687,7 @@ class RadiaCodeUSBTransport extends RadiaCodeTransport {
             }
 
             if (trials >= maxTrials) {
-                throw new Error(`${trials} USB Read Failures in sequence`);
+                throw new MultipleUSBReadFailure(`${trials} USB Read Failures in sequence`);
             }
 
             if (initialData.length < 4) {
@@ -698,7 +704,8 @@ class RadiaCodeUSBTransport extends RadiaCodeTransport {
                 const remainingBytes = responseLength - responseData.length;
                 console.log(`Reading additional ${remainingBytes} bytes...`);
                 
-                const transferPromise = this.device.transferIn(this.endpointIn, remainingBytes);
+                const readSize = Math.min(remainingBytes, 256);
+                const transferPromise = this.device.transferIn(this.endpointIn, readSize);
                 const result = await Promise.race([transferPromise, timeoutPromise]);
                 
                 if (result.status !== 'ok') {
@@ -717,7 +724,7 @@ class RadiaCodeUSBTransport extends RadiaCodeTransport {
 
         } catch (error) {
             console.error('USB receive error:', error);
-            throw new Error(`Failed to receive USB data: ${error.message}`);
+            throw error; // Re-throw the original error instead of wrapping it
         }
     }
 
@@ -1320,6 +1327,7 @@ if (typeof window !== 'undefined') {
     window.DeviceNotFound = DeviceNotFound;
     window.ConnectionClosed = ConnectionClosed;
     window.TimeoutError = TimeoutError;
+    window.MultipleUSBReadFailure = MultipleUSBReadFailure;
 }
 
 // Node.js export (if needed)
@@ -1339,6 +1347,7 @@ if (typeof module !== 'undefined' && module.exports) {
         VS,
         DeviceNotFound,
         ConnectionClosed,
-        TimeoutError
+        TimeoutError,
+        MultipleUSBReadFailure
     };
 }
