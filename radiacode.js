@@ -786,7 +786,7 @@ function decodeDataBuffer(buffer, baseTime) {
                 dt,
                 count_rate,
                 count_rate_err / 10,
-                dose_rate,
+                dose_rate * 10000, // HACK: this makes the dose rate match the display on the device, need to investigate
                 dose_rate_err / 10,
                 flags,
                 rt_flags
