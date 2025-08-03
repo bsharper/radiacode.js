@@ -2,6 +2,8 @@
 
 A web-based interface for RadiaCode radiation detection devices.
 
+![Screenshot example](screenshot.jpg)
+
 ## About
 
 This project is based on [https://github.com/cdump/radiacode](https://github.com/cdump/radiacode) and provides a browser-based interface for connecting to and interacting with RadiaCode devices.
