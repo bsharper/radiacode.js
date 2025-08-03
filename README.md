@@ -1,6 +1,6 @@
 # radiacode-web
 
-A web-based interface for RadiaCode radiation detection devices.
+A web-based interface for RadiaCode radiation detection devices. Connects via USB or Bluetooth
 
 ![Screenshot example](screenshot.jpg)
 
@@ -14,6 +14,10 @@ This project is based on [https://github.com/cdump/radiacode](https://github.com
 2. Open `index.html` in a Chrome-based browser (Chrome, Edge, or other Chromium-based browsers)
 3. Click "Connect Bluetooth" to connect to your RadiaCode device
 
+## Standalone
+
+There is very simple `create_standalone.py` script that will generate a fully self-contained HTML file called "standalone.html". It does this by inlining all external script references. The resulitng file (standalone.html) should work anywhere, even without internet. You can generate the file locally or just use the "standalone.html" in the repo. 
+
 ## Requirements
 
 - Chrome-based browser with Web Bluetooth API support
@@ -21,7 +25,7 @@ This project is based on [https://github.com/cdump/radiacode](https://github.com
 
 ## Note
 
-USB connectivity is not currently working. Please use Bluetooth connection only.
+USB and Bluetooth are working now.
 
 ## License
 
