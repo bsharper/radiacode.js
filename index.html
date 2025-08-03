@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>RadiaCode Standalone Demo</title>
+<script src="https://cdn.jsdelivr.net/npm/vue/dist/vue.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
+<script src="https://cdn.jsdelivr.net/npm/vue-apexcharts"></script>
+<script src="radiacode.js"></script>
+</head>
+<style>
+#app > div {
+  margin: 5px auto;
+  width: 80%;
+  text-align: center;
+  padding: 5px;
+  border: 1px #aaa dashed;
+}
+#app fieldset {
+  display: inline-block;
+  border: 0;
+  padding: 0;
+  margin-left: 20px;
+}
+.connection-controls {
+  background: #f5f5f5;
+  padding: 15px;
+  border-radius: 8px;
+  margin-bottom: 20px;
+}
+.connection-button {
+  margin: 5px;
+  padding: 10px 20px;
+  font-size: 16px;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: background-color 0.3s;
+}
+.connection-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.connect-bluetooth {
+  background: #007bff;
+  color: white;
+}
+.connect-bluetooth:hover:not(:disabled) {
+  background: #0056b3;
+}
+.connect-usb {
+  background: #28a745;
+  color: white;
+}
+.connect-usb:hover:not(:disabled) {
+  background: #1e7e34;
+}
+.disconnect {
+  background: #dc3545;
+  color: white;
+}
+.disconnect:hover:not(:disabled) {
+  background: #c82333;
+}
+.status {
+  margin-top: 10px;
+  padding: 10px;
+  border-radius: 5px;
+  font-weight: bold;
+}
+.status.connected {
+  background: #d4edda;
+  color: #155724;
+}
+.status.disconnected {
+  background: #f8d7da;
+  color: #721c24;
+}
+.status.connecting {
+  background: #fff3cd;
+  color: #856404;
+}
+.log {
+  max-height: 200px;
+  overflow-y: auto;
+  background: #f8f9fa;
+  border: 1px solid #dee2e6;
+  padding: 10px;
+  margin-top: 10px;
+  font-family: monospace;
+  font-size: 12px;
+  text-align: left;
+}
+.auto-update-controls {
+  margin: 10px 0;
+}
+</style>
+<body>
+<div id="app">
+  <!-- Connection Controls -->
+  <div class="connection-controls">
+    <h3>Device Connection</h3>
+    <button 
+      class="connection-button connect-bluetooth" 
+      @click="connectBluetooth" 
+      :disabled="isConnected || isConnecting">
+      📱 Connect Bluetooth
+    </button>
+    <button 
+      class="connection-button connect-usb" 
+      @click="connectUSB" 
+      :disabled="isConnected || isConnecting">
+      🔌 Connect USB
+    </button>
+    <button 
+      class="connection-button disconnect" 
+      @click="disconnect" 
+      :disabled="!isConnected">
+      ❌ Disconnect
+    </button>
+    
+    <div :class="['status', connectionStatus.toLowerCase()]">
+      {{ connectionStatusText }}
+    </div>
+    
+    <div class="auto-update-controls" v-if="isConnected">
+      <button @click="toggleAutoUpdate" class="connection-button">
+        Auto-update: {{ autoUpdateEnabled ? "ON" : "OFF" }}
+      </button>
+      <span v-if="autoUpdateEnabled">({{ updateInterval/1000 }}s interval)</span>
+    </div>
+    
+    <div class="log" v-if="logMessages.length > 0">
+      <div v-for="msg in logMessages" :key="msg.id">
+        <span style="color: #666;">{{ msg.timestamp }}</span> {{ msg.message }}
+      </div>
+    </div>
+  </div>
+
+  <!-- Spectrum Chart -->
+  <div>
+    <apexchart type="bar" height="350" :options="spectrumChartOptions" :series="spectrum_series"></apexchart>
+    <div>
+      <fieldset>
+        <input type="checkbox" id="spectrum_x_accum" v-model="spectrum_accum">
+        <label for="spectrum_x_accum">Accumulated</label>
+      </fieldset>
+      <fieldset>
+        <input type="radio" id="spectrum_x_channel" v-bind:value="false" v-model="spectrum_energy">
+        <label for="spectrum_x_channel">Channel</label>
+
+        <input type="radio" id="spectrum_x_energy" v-bind:value="true" v-model="spectrum_energy">
+        <label for="spectrum_x_energy">Energy</label>
+      </fieldset>
+      <fieldset>
+        <input type="radio" id="spectrum_linear" v-bind:value="false" v-model="spectrum_logarithmic">
+        <label for="spectrum_linear">Linear</label>
+        <input type="radio" id="spectrum_log" v-bind:value="true" v-model="spectrum_logarithmic">
+        <label for="spectrum_log">Logarithmic</label>
+      </fieldset>
+    </div>
+    <button @click="updateSpectrum" :disabled="!isConnected">Update spectrum</button>
+    <button @click="resetSpectrum" :disabled="!isConnected">Reset spectrum</button>
+  </div>
+
+  <!-- Rates Chart -->
+  <div>
+    <apexchart type="line" height="350" :options="ratesChartOptions" :series="rates_series"></apexchart>
+    <div>
+      <button @click="clearRatesData">Clear Rates Data</button>
+      <span v-if="rates_series.length > 0">
+        Data points: {{ rates_series[0]?.data?.length || 0 }}
+      </span>
+    </div>
+  </div>
+</div>
+
+<script>
+const common_options = {
+  chart: {
+    animations: {enabled: false},
+    zoom: {autoScaleYaxis: true},
+  },
+  tooltip: {intersect: false},
+  grid: {xaxis: {lines: {show: true}}},
+  dataLabels: {enabled: false},
+};
+
+var app = new Vue({
+  el: '#app',
+  components: {
+    apexchart: VueApexCharts,
+  },
+  data: function() {
+    return {
+      device: null,
+      isConnected: false,
+      isConnecting: false,
+      connectionStatus: 'Disconnected',
+      connectionStatusText: 'Not connected to device',
+      
+      // Auto-update functionality
+      autoUpdateEnabled: false,
+      updateInterval: 2000, // 2 seconds
+      updateTimer: null,
+      
+      // Logging
+      logMessages: [],
+      logCounter: 0,
+      
+      // Spectrum data
+      spectrum_duration: 0,
+      spectrum_series: [],
+      spectrum_coef: [0, 0, 0],
+      spectrum_accum: false,
+      spectrum_logarithmic: true,
+      spectrum_energy: true,
+      
+      // Rates data
+      rates_series: [
+        {name: 'Count Rate', data: [], yAxisIndex: 0},
+        {name: 'Dose Rate', data: [], yAxisIndex: 1}
+      ],
+      
+      ratesChartOptions: {
+        ...common_options,
+        title: {text: 'CountRate & DoseRate'},
+        xaxis: {type: 'datetime'},
+        yaxis: [
+          {seriesName: 'countrate', title: {text: 'CPS'}, labels: {formatter:(v) => v.toFixed(2) + ' CPS'}},
+          {seriesName: 'doserate',  title: {text: 'μSv/h'}, labels: {formatter:(v) => v.toFixed(6) + ' μSv/h'}, opposite: true},
+        ],
+      },
+    };
+  },
+  watch: {
+    spectrum_accum() {
+      if (this.isConnected) {
+        this.updateSpectrum();
+      }
+    }
+  },
+  computed: {
+    spectrumChartOptions() {
+      const a0 = this.spectrum_coef[0], a1 = this.spectrum_coef[1], a2 = this.spectrum_coef[2];
+      const fmt = this.spectrum_energy ? ((c) => (a0 + a1*c + a2*c*c).toFixed(0)) : undefined;
+      const title = this.spectrum_energy ? 'keV' : 'channel';
+      return{
+        ...common_options,
+        title: {text: `Spectrum, ${this.spectrum_duration} seconds`},
+        xaxis: {type: 'numeric', title: {text: title}, tickAmount: 25, labels: {formatter:fmt}},
+        yaxis: {logarithmic: this.spectrum_logarithmic, decimalsInFloat: 0},
+        plotOptions: {bar: {columnWidth: '95%'}},
+      };
+    },
+  },
+  created() {
+    this.log('RadiaCode Standalone Demo initialized');
+    this.log('Connect to your device using Bluetooth or USB');
+  },
+  beforeDestroy: function() {
+    if (this.updateTimer) {
+      clearInterval(this.updateTimer);
+    }
+    if (this.device && this.isConnected) {
+      this.device.disconnect();
+    }
+  },
+  methods: {
+    log(message) {
+      const timestamp = new Date().toLocaleTimeString();
+      this.logMessages.push({
+        id: this.logCounter++,
+        timestamp,
+        message
+      });
+      
+      // Keep only last 50 messages
+      if (this.logMessages.length > 50) {
+        this.logMessages = this.logMessages.slice(-50);
+      }
+      
+      // Auto-scroll to bottom
+      this.$nextTick(() => {
+        const logEl = document.querySelector('.log');
+        if (logEl) {
+          logEl.scrollTop = logEl.scrollHeight;
+        }
+      });
+    },
+
+    async connectBluetooth() {
+      try {
+        this.isConnecting = true;
+        this.connectionStatus = 'Connecting';
+        this.connectionStatusText = 'Connecting via Bluetooth...';
+        this.log('Attempting Bluetooth connection...');
+        
+        this.device = new RadiaCode(null, true); // Request Bluetooth
+        await this.device.connect();
+        
+        this.isConnected = true;
+        this.connectionStatus = 'Connected';
+        this.connectionStatusText = 'Connected via Bluetooth';
+        this.log('✅ Connected successfully via Bluetooth');
+        window.device = this.device; // For debugging
+        await this.initializeDevice();
+        
+      } catch (error) {
+        this.log(`❌ Bluetooth connection failed: ${error.message}`);
+        this.connectionStatus = 'Disconnected';
+        this.connectionStatusText = `Connection failed: ${error.message}`;
+        this.device = null;
+      } finally {
+        this.isConnecting = false;
+      }
+    },
+
+    async connectUSB() {
+      try {
+        this.isConnecting = true;
+        this.connectionStatus = 'Connecting';
+        this.connectionStatusText = 'Connecting via USB...';
+        this.log('Attempting USB connection...');
+        
+        if (!RadiaCodeUSBTransport.isSupported()) {
+          throw new Error('Web USB is not supported in this browser');
+        }
+        
+        this.device = new RadiaCode(); // Default to USB
+        await this.device.connect();
+        
+        this.isConnected = true;
+        this.connectionStatus = 'Connected';
+        this.connectionStatusText = 'Connected via USB';
+        this.log('✅ Connected successfully via USB');
+        
+        await this.initializeDevice();
+        
+      } catch (error) {
+        this.log(`❌ USB connection failed: ${error.message}`);
+        this.connectionStatus = 'Disconnected';
+        this.connectionStatusText = `Connection failed: ${error.message}`;
+        this.device = null;
+      } finally {
+        this.isConnecting = false;
+      }
+    },
+
+    async initializeDevice() {
+      try {
+        // Get device info sequentially to avoid GATT conflicts
+        this.log('Getting firmware version...');
+        const version = await this.device.getFirmwareVersion();
+        this.log(`Firmware: v${version.target.major}.${version.target.minor}`);
+        
+        this.log('Getting serial number...');
+        const serial = await this.device.getSerialNumber();
+        this.log(`Device: ${serial}`);
+        
+        // Test data buffer to see what we get
+        this.log('Testing initial data buffer...');
+        const testData = await this.device.data_buf();
+        this.log(`Got ${testData.length} records from data buffer`);
+        
+        for (let i = 0; i < Math.min(3, testData.length); i++) {
+          const record = testData[i];
+          if (record instanceof RealTimeData) {
+            this.log(`Sample data[${i}]: CR=${record.count_rate}, DR=${record.dose_rate}, CR_err=${record.count_rate_err}, DR_err=${record.dose_rate_err}`);
+          } else {
+            this.log(`Sample data[${i}]: ${record.constructor.name}`);
+          }
+        }
+        
+        // Get initial spectrum
+        this.log('Getting initial spectrum...');
+        await this.updateSpectrum();
+        
+        // Start auto-update by default
+        this.toggleAutoUpdate();
+        
+        this.log('✅ Device initialization completed successfully');
+        
+      } catch (error) {
+        this.log(`❌ Device initialization failed: ${error.message}`);
+        // Don't throw the error - connection is still working
+      }
+    },
+
+    async disconnect() {
+      try {
+        if (this.updateTimer) {
+          clearInterval(this.updateTimer);
+          this.updateTimer = null;
+          this.autoUpdateEnabled = false;
+        }
+        
+        if (this.device) {
+          await this.device.disconnect();
+          this.log('✅ Disconnected successfully');
+        }
+        
+        this.device = null;
+        this.isConnected = false;
+        this.connectionStatus = 'Disconnected';
+        this.connectionStatusText = 'Not connected to device';
+        
+      } catch (error) {
+        this.log(`❌ Disconnect failed: ${error.message}`);
+      }
+    },
+
+    toggleAutoUpdate() {
+      if (this.autoUpdateEnabled) {
+        // Stop auto-update
+        if (this.updateTimer) {
+          clearInterval(this.updateTimer);
+          this.updateTimer = null;
+        }
+        this.autoUpdateEnabled = false;
+        this.log('Auto-update stopped');
+      } else {
+        // Start auto-update
+        this.autoUpdateEnabled = true;
+        this.updateTimer = setInterval(() => {
+          this.updateRatesData();
+        }, this.updateInterval);
+        this.log(`Auto-update started (${this.updateInterval/1000}s interval)`);
+      }
+    },
+
+    async updateRatesData() {
+      if (!this.isConnected || !this.device) return;
+      
+      try {
+        const data = await this.device.data_buf();
+        const now = new Date().getTime();
+        
+        // Process real-time data
+        for (const record of data) {
+          if (record instanceof RealTimeData) {
+            // Debug logging - more detailed
+            this.log(`RealTimeData: CR=${record.count_rate.toFixed(2)} CPS, DR=${record.dose_rate.toFixed(6)} µSv/h, flags=0x${record.flags.toString(16)}`);
+            
+            // Add to rates series
+            this.rates_series[0].data.push([now, record.count_rate]);
+            this.rates_series[1].data.push([now, record.dose_rate]);
+            
+            // Keep only last 100 data points
+            if (this.rates_series[0].data.length > 100) {
+              this.rates_series[0].data = this.rates_series[0].data.slice(-100);
+              this.rates_series[1].data = this.rates_series[1].data.slice(-100);
+            }
+            
+            // Trigger chart update
+            this.rates_series = [...this.rates_series];
+            break; // Only process the first real-time record
+          }
+        }
+        
+      } catch (error) {
+        this.log(`❌ Failed to update rates data: ${error.message}`);
+      }
+    },
+
+    async updateSpectrum() {
+      if (!this.isConnected || !this.device) return;
+      
+      try {
+        this.log('Updating spectrum...');
+        
+        const spectrum = this.spectrum_accum ? 
+          await this.device.spectrum_accum() : 
+          await this.device.spectrum();
+        
+        this.spectrum_duration = spectrum.duration;
+        this.spectrum_coef = [spectrum.a0, spectrum.a1, spectrum.a2];
+        
+        // Convert spectrum data to chart format
+        const counts = spectrum.counts;
+        const data = [];
+        
+        if (this.spectrum_energy) {
+          // Energy scale
+          for (let i = 0; i < counts.length; i++) {
+            const energy = spectrum.channelToEnergy(i + 0.5);
+            data.push([energy, counts[i]]);
+          }
+        } else {
+          // Channel scale
+          for (let i = 0; i < counts.length; i++) {
+            data.push([i, counts[i]]);
+          }
+        }
+        
+        this.spectrum_series = [{
+          name: 'Counts',
+          data: data
+        }];
+        
+        this.log(`✅ Spectrum updated: ${spectrum.duration}s, ${spectrum.getTotalCounts()} total counts`);
+        
+      } catch (error) {
+        this.log(`❌ Failed to update spectrum: ${error.message}`);
+      }
+    },
+
+    async resetSpectrum() {
+      if (!this.isConnected || !this.device) return;
+      
+      try {
+        this.log('Resetting spectrum...');
+        await this.device.spectrum_reset();
+        this.log('✅ Spectrum reset successfully');
+        
+        // Wait a moment then update
+        setTimeout(() => {
+          this.updateSpectrum();
+        }, 1000);
+        
+      } catch (error) {
+        this.log(`❌ Failed to reset spectrum: ${error.message}`);
+      }
+    },
+
+    clearRatesData() {
+      this.rates_series[0].data = [];
+      this.rates_series[1].data = [];
+      this.rates_series = [...this.rates_series];
+      this.log('Rates data cleared');
+    }
+  },
+});
+</script>
+</body>
+</html>
