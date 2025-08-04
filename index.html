@@ -457,8 +457,8 @@ var app = new Vue({
         const doseCanvas = document.getElementById('doseRateChart');
         
         if (countCanvas && doseCanvas) {
-          this.countRateChart.streamTo(countCanvas, 1000);
-          this.doseRateChart.streamTo(doseCanvas, 1000);
+          this.countRateChart.streamTo(countCanvas, 1500);
+          this.doseRateChart.streamTo(doseCanvas, 1500);
           this.log('✅ Real-time charts initialized');
         }
       });
