@@ -6,6 +6,7 @@
 <script src="https://cdn.jsdelivr.net/npm/vue/dist/vue.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
 <script src="https://cdn.jsdelivr.net/npm/vue-apexcharts"></script>
+<script src="smoothie.js"></script>
 <script src="radiacode.js"></script>
 </head>
 <style>
@@ -132,6 +133,65 @@ body {
 .device-info-item span {
   color: #495057;
 }
+.realtime-data {
+  background: #f0f8e8;
+  padding: 15px;
+  border-radius: 8px;
+  margin-bottom: 20px;
+  border: 1px solid #c3e6cb;
+}
+.realtime-data h3 {
+  margin-top: 0;
+  color: #155724;
+}
+.realtime-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 15px;
+  margin-bottom: 15px;
+}
+.realtime-item {
+  background: white;
+  padding: 15px;
+  border-radius: 8px;
+  border: 1px solid #c3e6cb;
+  text-align: center;
+}
+.realtime-item .value {
+  font-size: 24px;
+  font-weight: bold;
+  color: #155724;
+  display: block;
+  margin-bottom: 5px;
+}
+.realtime-item .error {
+  font-size: 14px;
+  font-weight: normal;
+  color: #6c757d;
+  margin-left: 5px;
+}
+.realtime-item .unit {
+  font-size: 14px;
+  color: #6c757d;
+  font-weight: normal;
+}
+.realtime-item .label {
+  font-size: 12px;
+  color: #495057;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.chart-container {
+  background: white;
+  padding: 15px;
+  border-radius: 8px;
+  border: 1px solid #c3e6cb;
+}
+#countRateChart, #doseRateChart {
+  width: 100%;
+  height: 200px;
+  border: 1px solid #dee2e6;
+}
 </style>
 <body>
 <div id="app">
@@ -194,6 +254,39 @@ body {
       <div class="device-info-item">
         <label>Last Update:</label>
         <span>{{ deviceInfo.lastUpdate || 'Never' }}</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Real-time Data -->
+  <div class="realtime-data" v-if="isConnected">
+    <h3>⚡ Real-time Data</h3>
+    <div class="realtime-grid">
+      <div class="realtime-item">
+        <div class="label">Count Rate</div>
+        <span class="value">
+          {{ currentData.countRate.toFixed(2) }}
+          <span class="error">± {{ currentData.countRateError.toFixed(2) }}</span>
+        </span>
+        <span class="unit">CPS</span>
+      </div>
+      <div class="realtime-item">
+        <div class="label">Dose Rate</div>
+        <span class="value">
+          {{ currentData.doseRate.toFixed(4) }}
+          <span class="error">± {{ currentData.doseRateError.toFixed(4) }}</span>
+        </span>
+        <span class="unit">µSv/h</span>
+      </div>
+    </div>
+    <div class="realtime-grid">
+      <div class="chart-container">
+        <h4 style="margin-top: 0; color: #155724;">Count Rate (CPS)</h4>
+        <canvas id="countRateChart"></canvas>
+      </div>
+      <div class="chart-container">
+        <h4 style="margin-top: 0; color: #155724;">Dose Rate (µSv/h)</h4>
+        <canvas id="doseRateChart"></canvas>
       </div>
     </div>
   </div>
@@ -267,6 +360,20 @@ var app = new Vue({
         connectionType: null,
         lastUpdate: null
       },
+      
+      // Real-time data
+      currentData: {
+        countRate: 0,
+        doseRate: 0,
+        countRateError: 0,
+        doseRateError: 0
+      },
+      
+      // Smoothie chart
+      countRateChart: null,
+      doseRateChart: null,
+      countRateTimeSeries: null,
+      doseRateTimeSeries: null,
       
       // Auto-update functionality
       autoUpdateEnabled: false,
@@ -452,12 +559,99 @@ var app = new Vue({
         // Start auto-update by default
         this.toggleAutoUpdate();
         
+        // Initialize smoothie chart
+        this.initializeSmoothieChart();
+        
         this.log('✅ Device initialization completed successfully');
         
       } catch (error) {
         this.log(`❌ Device initialization failed: ${error.message}`);
         // Don't throw the error - connection is still working
       }
+    },
+
+    initializeSmoothieChart() {
+      // Create time series for count rate and dose rate
+      this.countRateTimeSeries = new TimeSeries();
+      this.doseRateTimeSeries = new TimeSeries();
+      
+      // Create the count rate chart
+      this.countRateChart = new SmoothieChart({
+        responsive: true,
+        millisPerPixel: 10,
+        maxValueScale: 1.1,
+        minValueScale: 1.1,
+        tooltip: true,
+        grid: {
+          strokeStyle: 'rgba(119, 119, 119, 0.2)',
+          fillStyle: 'rgba(0, 0, 0, 0.02)',
+          lineWidth: 1,
+          millisPerLine: 5000,
+          verticalSections: 6
+        },
+        labels: {
+          fillStyle: 'rgba(0, 0, 0, 0.6)',
+          fontSize: 12
+        }
+      });
+      
+      // Create the dose rate chart
+      this.doseRateChart = new SmoothieChart({
+        responsive: true,
+        millisPerPixel: 10,
+        maxValueScale: 1.1,
+        minValueScale: 1.1,
+        tooltip: true,
+        grid: {
+          strokeStyle: 'rgba(119, 119, 119, 0.2)',
+          fillStyle: 'rgba(0, 0, 0, 0.02)',
+          lineWidth: 1,
+          millisPerLine: 5000,
+          verticalSections: 6
+        },
+        labels: {
+          fillStyle: 'rgba(0, 0, 0, 0.6)',
+          fontSize: 12
+        }
+      });
+      
+      // Add time series to charts
+      this.countRateChart.addTimeSeries(this.countRateTimeSeries, {
+        strokeStyle: 'rgba(0, 123, 255, 1)',
+        fillStyle: 'rgba(0, 123, 255, 0.1)',
+        lineWidth: 2
+      });
+      
+      this.doseRateChart.addTimeSeries(this.doseRateTimeSeries, {
+        strokeStyle: 'rgba(40, 167, 69, 1)',
+        fillStyle: 'rgba(40, 167, 69, 0.1)',
+        lineWidth: 2
+      });
+      
+      // Start streaming to canvases
+      this.$nextTick(() => {
+        const countCanvas = document.getElementById('countRateChart');
+        const doseCanvas = document.getElementById('doseRateChart');
+        
+        if (countCanvas && doseCanvas) {
+          this.countRateChart.streamTo(countCanvas, 2000);
+          this.doseRateChart.streamTo(doseCanvas, 2000);
+          this.log('✅ Real-time charts initialized');
+        }
+      });
+    },
+
+    destroySmoothieChart() {
+      if (this.countRateChart) {
+        this.countRateChart.stop();
+        this.countRateChart = null;
+      }
+      if (this.doseRateChart) {
+        this.doseRateChart.stop();
+        this.doseRateChart = null;
+      }
+      this.countRateTimeSeries = null;
+      this.doseRateTimeSeries = null;
     },
 
     async disconnect() {
@@ -473,6 +667,9 @@ var app = new Vue({
           this.log('✅ Disconnected successfully');
         }
         
+        // Destroy smoothie chart
+        this.destroySmoothieChart();
+        
         this.device = null;
         this.isConnected = false;
         this.connectionStatus = 'Disconnected';
@@ -484,6 +681,14 @@ var app = new Vue({
           serialNumber: null,
           connectionType: null,
           lastUpdate: null
+        };
+        
+        // Reset current data
+        this.currentData = {
+          countRate: 0,
+          doseRate: 0,
+          countRateError: 0,
+          doseRateError: 0
         };
         
       } catch (error) {
@@ -522,6 +727,19 @@ var app = new Vue({
           if (record instanceof RealTimeData) {
             // Debug logging - more detailed
             this.log(`RealTimeData: CR=${record.count_rate.toFixed(2)} CPS, DR=${record.dose_rate.toFixed(6)} µSv/h, flags=0x${record.flags.toString(16)}`);
+            
+            // Update current data
+            this.currentData.countRate = record.count_rate;
+            this.currentData.doseRate = record.dose_rate;
+            this.currentData.countRateError = record.count_rate_err;
+            this.currentData.doseRateError = record.dose_rate_err;
+            
+            // Add to smoothie chart
+            if (this.countRateTimeSeries && this.doseRateTimeSeries) {
+              this.countRateTimeSeries.append(now, record.count_rate);
+              // Use original dose rate value (µSv/h) for dose rate chart
+              this.doseRateTimeSeries.append(now, record.dose_rate);
+            }
             
             // Add to rates series
             this.rates_series[0].data.push([now, record.count_rate]);
