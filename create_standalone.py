@@ -1,7 +1,10 @@
 import os
 import re
+import base64
 import shutil
 import urllib3
+from pathlib import Path
+from urllib.parse import unquote
 
 from html.parser import HTMLParser
 from typing import List
@@ -53,6 +56,50 @@ class _ScriptExtractor(HTMLParser):
     def handle_charref(self, name):
         if self._collect and not self._has_src:
             self._buffer.append(f"&#{name};")
+            
+def embed_fonts_in_css(css_file, output_file):
+    css_path = Path(css_file).resolve()
+    base_dir = css_path.parent
+
+    with open(css_path, 'r', encoding='utf-8') as f:
+        css = f.read()
+
+    def replace_font_url(match):
+        url = match.group(1).strip('\'"')
+        if "?" in url:
+            url = url.split('?')[0]
+        if url.startswith('data:'):
+            return match.group(0)  # already embedded
+
+        font_path = base_dir / unquote(url)
+        font_path = font_path.resolve()
+        if not font_path.exists():
+            print(f"[!] Font file not found: {font_path}")
+            return match.group(0)
+
+        ext = font_path.suffix.lower().lstrip('.')
+        mime = {
+            'woff2': 'font/woff2',
+            'woff': 'font/woff',
+            'ttf': 'font/ttf',
+            'otf': 'font/otf',
+            'eot': 'application/vnd.ms-fontobject',
+            'svg': 'image/svg+xml',
+        }.get(ext, 'application/octet-stream')
+
+        with open(font_path, 'rb') as f:
+            encoded = base64.b64encode(f.read()).decode('utf-8')
+
+        data_url = f"data:{mime};base64,{encoded}"
+        return f"url('{data_url}')"
+
+    # Replace all font-face url(...) instances
+    css_out = re.sub(r"url\(([^)]+)\)", replace_font_url, css)
+
+    with open(output_file, 'w', encoding='utf-8') as f:
+        f.write(css_out)
+
+    print(f"[+] Embedded fonts written to: {output_file}")
 
 def humanize_bytes(n: int) -> str:
     for unit in ("B", "kB", "MB", "GB", "TB", "PB", "EB"):
@@ -96,7 +143,7 @@ def compress_js(script: str) -> str:
         print("Terser is not installed. Please install it to compress files.")
         return script
     from subprocess import Popen, PIPE
-    proc = Popen(['terser', '-c'], stdin=PIPE, stdout=PIPE, stderr=PIPE)
+    proc = Popen(['terser', '-c'], stdin=PIPE, stdout=PIPE, stderr=PIPE, shell=True)
     stdout, stderr = proc.communicate(script.encode('utf-8'))
     if proc.returncode != 0:
         print(f"Terser error: {stderr.decode('utf-8')}")
@@ -118,13 +165,40 @@ def compress_inline_js(html_content: str) -> str:
             html_content = html_content.replace(script, compressed_script)
     return html_content
 
+def inline_css(html_content: str) -> str:
+    css_files = re.findall(r'<link\s+rel="stylesheet"\s+href="([^"]+)"', html_content)
+    for css_file in css_files:
+        if not css_file.startswith('http://') and not css_file.startswith('https://'):
+            print (f"Processing local CSS file: {css_file}")
+            css_path = Path(css_file).resolve()
+            if css_path.exists():
+                with open(css_path, 'r', encoding='utf-8') as f:
+                    css_content = f.read()
+                if re.search(r"url\(([^)]+)\)", css_content):
+                    print(f"Embedding fonts in CSS file: {css_file}")
+                    new_css_file = os.path.basename(css_file.replace('.css', '.min.css'))
+                    embed_fonts_in_css(css_path, css_path.with_name(new_css_file))
+                    css_content = open(css_path.with_name(new_css_file), 'r', encoding='utf-8').read()
+                style_tag = f"<style>\n/* Content from {css_file} */\n {css_content}\n</style>"
+                html_before = len(html_content)
+                #html_content = re.sub(rf'<link\s+rel="stylesheet"\s+href="{re.escape(css_file)}">', style_tag, html_content)
+                html_content = html_content.replace(f'<link rel="stylesheet" href="{css_file}">', style_tag)
+                
+                
+                
+                html_after = len(html_content)
+                print (f"Replaced {css_file} with inline style tag, size changed from {bytes_string(html_before)} to {bytes_string(html_after)}")
+            else:
+                print(f"CSS file not found: {css_file}")
+    return html_content
 
 def main():
     global full_size, compressed_size
-    txt = open('index.html').read()
+    txt = open('index.html', 'r', encoding='utf-8').read()
     txt = compress_inline_js(txt)
+    txt = inline_css(txt)
     lns = txt.split('\n')
-    with open('standalone.html', 'w') as f:
+    with open('standalone.html', 'w', encoding='utf-8') as f:
         for ln in lns:
             m = re.match(r'\s*<script\s+src="(.*)"\s*>\s*</script>', ln)
             if m:
@@ -163,4 +237,5 @@ if __name__ == "__main__":
     diff = (compressed_size/full_size) * 100 if full_size > 0 else 0
     print(f"Total size reduction: {compressed_size} bytes ({humanize_bytes(compressed_size)}) from {full_size} bytes ({humanize_bytes(full_size)})")
     print(f"Compression ratio: {diff:.2f}%")
+    #embed_fonts_in_css('css/fontello.css', 'css/fontello.min.css')
     

@@ -1,0 +1,237 @@
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
+  background-color: #f8f9fa;
+  margin: 0;
+  padding: 20px;
+}
+#app > div {
+  margin: 5px auto;
+  width: 80%;
+  text-align: center;
+  padding: 5px;
+  border: 1px #aaa dashed;
+}
+#app fieldset {
+  display: inline-block;
+  border: 0;
+  padding: 0;
+  margin-left: 20px;
+}
+.connection-controls {
+  background: #f5f5f5;
+  padding: 15px;
+  border-radius: 8px;
+  margin-bottom: 20px;
+}
+
+.connection-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+.connection-buttons {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.connection-button {
+  margin: 0;
+  padding: 10px 20px;
+  font-size: 16px;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: background-color 0.3s;
+}
+
+.connection-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.connect-bluetooth {
+  background: #007bff;
+  color: white;
+}
+
+.connect-bluetooth:hover:not(:disabled) {
+  background: #0056b3;
+}
+
+.connect-usb {
+  background: #007bff;
+  color: white;
+}
+
+.connect-usb:hover:not(:disabled) {
+  background: #0056b3;
+}
+
+.disconnect {
+  background: #6c757d;
+  color: white;
+}
+
+.disconnect:hover:not(:disabled) {
+  background: #545b62;
+}
+
+.status {
+  padding: 10px 15px;
+  border-radius: 5px;
+  font-weight: bold;
+  min-width: 200px;
+  text-align: center;
+}
+
+.status.connected {
+  background: #d4edda;
+  color: #155724;
+  border: 1px solid #c3e6cb;
+}
+
+.status.disconnected {
+  background: #d1ecf1;
+  color: #0c5460;
+  border: 1px solid #bee5eb;
+}
+
+.status.connecting {
+  background: #fff3cd;
+  color: #856404;
+  border: 1px solid #ffeaa7;
+}
+.log {
+  max-height: 200px;
+  overflow-y: auto;
+  background: #f8f9fa;
+  border: 1px solid #dee2e6;
+  padding: 10px;
+  margin-top: 10px;
+  font-family: monospace;
+  font-size: 12px;
+  text-align: left;
+}
+.auto-update-controls {
+  margin: 15px 0 0 0;
+  padding-top: 15px;
+  border-top: 1px solid #dee2e6;
+  text-align: center;
+}
+.device-info {
+  background: #e8f4f8;
+  padding: 15px;
+  border-radius: 8px;
+  margin-bottom: 20px;
+  border: 1px solid #b8daff;
+}
+.device-info h3 {
+  margin-top: 0;
+  color: #0c5460;
+}
+.device-info-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+.device-info-item {
+  background: white;
+  padding: 10px;
+  border-radius: 5px;
+  border: 1px solid #d1ecf1;
+}
+.device-info-item label {
+  font-weight: bold;
+  color: #0c5460;
+  display: block;
+  margin-bottom: 5px;
+}
+.device-info-item span {
+  color: #495057;
+}
+.realtime-data {
+  background: #f0f8e8;
+  padding: 15px;
+  border-radius: 8px;
+  margin-bottom: 20px;
+  border: 1px solid #c3e6cb;
+}
+.realtime-data h3 {
+  margin-top: 0;
+  color: #155724;
+}
+.realtime-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 15px;
+  margin-bottom: 15px;
+}
+.realtime-item {
+  background: white;
+  padding: 15px;
+  border-radius: 8px;
+  border: 1px solid #c3e6cb;
+  text-align: center;
+}
+.realtime-item .value {
+  font-size: 24px;
+  font-weight: bold;
+  color: #155724;
+  display: block;
+  margin-bottom: 5px;
+}
+.realtime-item .error {
+  font-size: 14px;
+  font-weight: normal;
+  color: #6c757d;
+  margin-left: 5px;
+}
+.realtime-item .unit {
+  font-size: 14px;
+  color: #6c757d;
+  font-weight: normal;
+}
+.realtime-item .label {
+  font-size: 12px;
+  color: #495057;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.chart-container {
+  background: white;
+  padding: 15px;
+  border-radius: 8px;
+  border: 1px solid #c3e6cb;
+}
+#countRateChart, #doseRateChart {
+  width: 100%;
+  height: 200px;
+  border: 1px solid #dee2e6;
+}
+
+/* Responsive design for connection controls */
+@media (max-width: 768px) {
+  .connection-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  
+  .connection-buttons {
+    justify-content: center;
+    margin-bottom: 10px;
+  }
+  
+  .connection-button {
+    flex: 1;
+    min-width: 120px;
+  }
+  
+  .status {
+    min-width: auto;
+  }
+}
