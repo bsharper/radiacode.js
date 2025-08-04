@@ -105,16 +105,108 @@ body {
   color: #856404;
   border: 1px solid #ffeaa7;
 }
+.log-section {
+  margin-top: 15px;
+}
+
+.log-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #e9ecef;
+  padding: 8px 12px;
+  border: 1px solid #dee2e6;
+  border-radius: 5px 5px 0 0;
+  cursor: pointer;
+  user-select: none;
+  font-weight: 500;
+  transition: background-color 0.2s;
+}
+
+.log-header:hover {
+  background: #dee2e6;
+}
+
+.log-header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.log-toggle-icon {
+  font-family: monospace;
+  font-size: 12px;
+  color: #495057;
+}
+
+.auto-scroll-indicator {
+  font-size: 11px;
+  color: #856404;
+  background: #fff3cd;
+  padding: 2px 6px;
+  border-radius: 3px;
+  border: 1px solid #ffeaa7;
+}
+
+.clear-log-button {
+  background: #dc3545;
+  color: white;
+  border: none;
+  padding: 4px 8px;
+  border-radius: 3px;
+  font-size: 11px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.clear-log-button:hover {
+  background: #c82333;
+}
+
 .log {
-  max-height: 200px;
+  max-height: 300px;
   overflow-y: auto;
   background: #f8f9fa;
   border: 1px solid #dee2e6;
-  padding: 10px;
-  margin-top: 10px;
-  font-family: monospace;
+  border-top: none;
+  border-radius: 0 0 5px 5px;
+  padding: 0;
+  margin: 0;
+  font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Fira Code', 'Fira Mono', 'Droid Sans Mono', 'Cascadia Code', 'Source Code Pro', monospace;
   font-size: 12px;
   text-align: left;
+}
+
+.log-entry {
+  padding: 4px 12px;
+  border-bottom: 1px solid #f1f3f4;
+  word-wrap: break-word;
+  white-space: pre-wrap;
+}
+
+.log-entry:last-child {
+  border-bottom: none;
+}
+
+.log-entry:nth-child(even) {
+  background: #fbfcfd;
+}
+
+.log-timestamp {
+  color: #6c757d;
+  font-weight: 500;
+  margin-right: 8px;
+}
+
+.log-message {
+  color: #212529;
+}
+
+.log-info {
+  background: #e7f3ff !important;
+  color: #0066cc;
+  font-style: italic;
+  text-align: center;
 }
 .auto-update-controls {
   margin: 15px 0 0 0;

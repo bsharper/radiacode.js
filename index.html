@@ -51,9 +51,23 @@
       <span v-if="autoUpdateEnabled">({{ updateInterval/1000 }}s interval)</span>
     </div>
     
-    <div class="log" v-if="logMessages.length > 0">
-      <div v-for="msg in logMessages" :key="msg.id">
-        <span style="color: #666;">{{ msg.timestamp }}</span> {{ msg.message }}
+    <div class="log-section" v-if="logMessages.length > 0">
+      <div class="log-header" @click="toggleLogExpanded">
+        <div class="log-header-left">
+          <span class="log-toggle-icon">{{ logExpanded ? '▼' : '▶' }}</span>
+          <span>Activity Log ({{ logMessages.length }} messages)</span>
+          <span v-if="logExpanded && !logAutoScroll" class="auto-scroll-indicator">Scroll paused</span>
+        </div>
+        <button @click.stop="clearLog" class="clear-log-button">Clear</button>
+      </div>
+      <div class="log" v-show="logExpanded" ref="logContainer" @scroll="handleLogScroll">
+        <div v-for="msg in visibleLogMessages" :key="msg.id" class="log-entry">
+          <span class="log-timestamp">{{ msg.timestamp }}</span> 
+          <span class="log-message">{{ msg.message }}</span>
+        </div>
+        <div v-if="logMessages.length > maxVisibleMessages" class="log-entry log-info">
+          ... {{ logMessages.length - maxVisibleMessages }} earlier messages (scroll to top to load)
+        </div>
       </div>
     </div>
   </div>
@@ -206,6 +220,9 @@ var app = new Vue({
       // Logging
       logMessages: [],
       logCounter: 0,
+      logExpanded: true, // Start expanded by default
+      maxVisibleMessages: 500, // Limit DOM elements for performance
+      logAutoScroll: true, // Whether to auto-scroll to bottom on new messages
       
       // Spectrum data
       spectrum_duration: 0,
@@ -240,6 +257,13 @@ var app = new Vue({
     }
   },
   computed: {
+    visibleLogMessages() {
+      // Show the most recent messages for performance
+      if (this.logMessages.length <= this.maxVisibleMessages) {
+        return this.logMessages;
+      }
+      return this.logMessages.slice(-this.maxVisibleMessages);
+    },
     spectrumChartOptions() {
       const a0 = this.spectrum_coef[0], a1 = this.spectrum_coef[1], a2 = this.spectrum_coef[2];
       const fmt = this.spectrum_energy ? ((c) => (a0 + a1*c + a2*c*c).toFixed(0)) : undefined;
@@ -274,18 +298,46 @@ var app = new Vue({
         message
       });
       
-      // Keep only last 50 messages
-      if (this.logMessages.length > 50) {
-        this.logMessages = this.logMessages.slice(-50);
-      }
-      
-      // Auto-scroll to bottom
+      // Auto-scroll to bottom only if user is already at the bottom and log is expanded
       this.$nextTick(() => {
-        const logEl = document.querySelector('.log');
-        if (logEl) {
-          logEl.scrollTop = logEl.scrollHeight;
+        if (this.logExpanded && this.logAutoScroll) {
+          const logEl = document.querySelector('.log');
+          if (logEl) {
+            logEl.scrollTop = logEl.scrollHeight;
+          }
         }
       });
+    },
+
+    handleLogScroll() {
+      const logEl = this.$refs.logContainer;
+      if (logEl) {
+        // Check if user is at the bottom (within 5px tolerance)
+        const isAtBottom = logEl.scrollHeight - logEl.scrollTop - logEl.clientHeight < 5;
+        this.logAutoScroll = isAtBottom;
+      }
+    },
+
+    toggleLogExpanded() {
+      this.logExpanded = !this.logExpanded;
+      
+      // Auto-scroll to bottom when expanding (and reset auto-scroll to true)
+      if (this.logExpanded) {
+        this.logAutoScroll = true;
+        this.$nextTick(() => {
+          const logEl = document.querySelector('.log');
+          if (logEl) {
+            logEl.scrollTop = logEl.scrollHeight;
+          }
+        });
+      }
+    },
+
+    clearLog() {
+      this.logMessages = [];
+      this.logCounter = 0;
+      this.logAutoScroll = true; // Reset auto-scroll when clearing
+      this.log('Log cleared');
     },
 
     async connectBluetooth() {

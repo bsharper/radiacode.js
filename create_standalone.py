@@ -56,6 +56,18 @@ class _ScriptExtractor(HTMLParser):
     def handle_charref(self, name):
         if self._collect and not self._has_src:
             self._buffer.append(f"&#{name};")
+
+
+def final_pass_check(filename):
+    if exists("html-minifier-next"):
+        print("[+] Running final pass with html-minifier-next...", flush=True, end="")
+        output_filename = filename.replace('.html', '.min.html')
+        os.system(f"html-minifier-next --collapse-whitespace --remove-comments --minify-css true --minify-js true {filename} -o {output_filename}")
+        before_size = os.path.getsize(filename)
+        after_size = os.path.getsize(output_filename)
+        print(f"done ({bytes_string(before_size)} -> {bytes_string(after_size)}")
+        
+        
             
 def embed_fonts_in_css(css_file, output_file):
     css_path = Path(css_file).resolve()
@@ -86,6 +98,7 @@ def embed_fonts_in_css(css_file, output_file):
             'eot': 'application/vnd.ms-fontobject',
             'svg': 'image/svg+xml',
         }.get(ext, 'application/octet-stream')
+        print (f"\t[+] Embedding font: {os.path.basename(font_path)} ({mime})")
 
         with open(font_path, 'rb') as f:
             encoded = base64.b64encode(f.read()).decode('utf-8')
@@ -99,7 +112,7 @@ def embed_fonts_in_css(css_file, output_file):
     with open(output_file, 'w', encoding='utf-8') as f:
         f.write(css_out)
 
-    print(f"[+] Embedded fonts written to: {output_file}")
+    print(f"[+] Embedded fonts written to: {os.path.basename(output_file)}")
 
 def humanize_bytes(n: int) -> str:
     for unit in ("B", "kB", "MB", "GB", "TB", "PB", "EB"):
@@ -110,6 +123,7 @@ def humanize_bytes(n: int) -> str:
         n /= 1000
     # fallback, shouldn't normally hit because of "EB" cap
     return f"{n:.1f} EB"
+
 
 def bytes_string(n: int) -> str:
     return f"{n} bytes ({humanize_bytes(n)})"
@@ -132,7 +146,7 @@ def compress_file(filename):
         ifs = os.path.getsize(filename)
         full_size += ifs
         compressed_size += ofs
-        print(f"Compressed {filename} {bytes_string(ifs)} to {output_filename} {bytes_string(ofs)}")
+        print(f"[-] Compressed {filename} {bytes_string(ifs)} to {output_filename} {bytes_string(ofs)}")
         return output_filename
     else:
         print(f"Failed to compress {filename}")
@@ -169,25 +183,23 @@ def inline_css(html_content: str) -> str:
     css_files = re.findall(r'<link\s+rel="stylesheet"\s+href="([^"]+)"', html_content)
     for css_file in css_files:
         if not css_file.startswith('http://') and not css_file.startswith('https://'):
-            print (f"Processing local CSS file: {css_file}")
+            #print (f"Processing local CSS file: {css_file}")
             css_path = Path(css_file).resolve()
             if css_path.exists():
                 with open(css_path, 'r', encoding='utf-8') as f:
                     css_content = f.read()
                 if re.search(r"url\(([^)]+)\)", css_content):
-                    print(f"Embedding fonts in CSS file: {css_file}")
+                    print(f"[+] Embedding fonts in CSS file: {css_file}")
                     new_css_file = os.path.basename(css_file.replace('.css', '.min.css'))
                     embed_fonts_in_css(css_path, css_path.with_name(new_css_file))
                     css_content = open(css_path.with_name(new_css_file), 'r', encoding='utf-8').read()
                 style_tag = f"<style>\n/* Content from {css_file} */\n {css_content}\n</style>"
                 html_before = len(html_content)
-                #html_content = re.sub(rf'<link\s+rel="stylesheet"\s+href="{re.escape(css_file)}">', style_tag, html_content)
-                html_content = html_content.replace(f'<link rel="stylesheet" href="{css_file}">', style_tag)
-                
-                
-                
+                #html_content = html_content.replace(f'<link rel="stylesheet" href="{css_file}">', style_tag)
+                replace_reg = rf'<link.*rel="stylesheet".*href="{css_file}".*>'
+                html_content = re.sub(replace_reg, lambda _: style_tag, html_content, re.IGNORECASE)
                 html_after = len(html_content)
-                print (f"Replaced {css_file} with inline style tag, size changed from {bytes_string(html_before)} to {bytes_string(html_after)}")
+                print (f"[+] Replaced {css_file} with inline style tag, size changed from {bytes_string(html_before)} to {bytes_string(html_after)}")
             else:
                 print(f"CSS file not found: {css_file}")
     return html_content
@@ -207,7 +219,7 @@ def main():
                     resp = urllib3.request("GET", external_file)
                     if resp.status == 200:
                         data = resp.data.decode('utf-8')
-                        print(f"Adding external script: {external_file} {bytes_string(len(data))}")
+                        print(f"[+] Adding external script: {external_file} {bytes_string(len(data))}")
                         f.write("<script>\n")
                         f.write("// Fetched from: " + external_file + "\n")
                         f.write(data)
@@ -221,7 +233,7 @@ def main():
                         if compressed_filename:
                             external_file = compressed_filename
                     data = open(external_file).read()
-                    print(f"Adding local script: {external_file} {bytes_string(len(data))}")
+                    print(f"[+] Adding local script: {external_file} {bytes_string(len(data))}")
                     f.write("<script>\n")
                     f.write("// Read from: " + external_file + "\n")
                     f.write(data)
@@ -237,5 +249,6 @@ if __name__ == "__main__":
     diff = (compressed_size/full_size) * 100 if full_size > 0 else 0
     print(f"Total size reduction: {compressed_size} bytes ({humanize_bytes(compressed_size)}) from {full_size} bytes ({humanize_bytes(full_size)})")
     print(f"Compression ratio: {diff:.2f}%")
+    final_pass_check('standalone.html')
     #embed_fonts_in_css('css/fontello.css', 'css/fontello.min.css')
     

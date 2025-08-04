@@ -369,16 +369,108 @@ const COMMAND={GET_STATUS:5,SET_EXCHANGE:7,GET_VERSION:10,GET_SERIAL:11,FW_IMAGE
   color: #856404;
   border: 1px solid #ffeaa7;
 }
+.log-section {
+  margin-top: 15px;
+}
+
+.log-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #e9ecef;
+  padding: 8px 12px;
+  border: 1px solid #dee2e6;
+  border-radius: 5px 5px 0 0;
+  cursor: pointer;
+  user-select: none;
+  font-weight: 500;
+  transition: background-color 0.2s;
+}
+
+.log-header:hover {
+  background: #dee2e6;
+}
+
+.log-header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.log-toggle-icon {
+  font-family: monospace;
+  font-size: 12px;
+  color: #495057;
+}
+
+.auto-scroll-indicator {
+  font-size: 11px;
+  color: #856404;
+  background: #fff3cd;
+  padding: 2px 6px;
+  border-radius: 3px;
+  border: 1px solid #ffeaa7;
+}
+
+.clear-log-button {
+  background: #dc3545;
+  color: white;
+  border: none;
+  padding: 4px 8px;
+  border-radius: 3px;
+  font-size: 11px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.clear-log-button:hover {
+  background: #c82333;
+}
+
 .log {
-  max-height: 200px;
+  max-height: 300px;
   overflow-y: auto;
   background: #f8f9fa;
   border: 1px solid #dee2e6;
-  padding: 10px;
-  margin-top: 10px;
-  font-family: monospace;
+  border-top: none;
+  border-radius: 0 0 5px 5px;
+  padding: 0;
+  margin: 0;
+  font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Fira Code', 'Fira Mono', 'Droid Sans Mono', 'Cascadia Code', 'Source Code Pro', monospace;
   font-size: 12px;
   text-align: left;
+}
+
+.log-entry {
+  padding: 4px 12px;
+  border-bottom: 1px solid #f1f3f4;
+  word-wrap: break-word;
+  white-space: pre-wrap;
+}
+
+.log-entry:last-child {
+  border-bottom: none;
+}
+
+.log-entry:nth-child(even) {
+  background: #fbfcfd;
+}
+
+.log-timestamp {
+  color: #6c757d;
+  font-weight: 500;
+  margin-right: 8px;
+}
+
+.log-message {
+  color: #212529;
+}
+
+.log-info {
+  background: #e7f3ff !important;
+  color: #0066cc;
+  font-style: italic;
+  text-align: center;
 }
 .auto-update-controls {
   margin: 15px 0 0 0;
@@ -539,9 +631,23 @@ const COMMAND={GET_STATUS:5,SET_EXCHANGE:7,GET_VERSION:10,GET_SERIAL:11,FW_IMAGE
       <span v-if="autoUpdateEnabled">({{ updateInterval/1000 }}s interval)</span>
     </div>
     
-    <div class="log" v-if="logMessages.length > 0">
-      <div v-for="msg in logMessages" :key="msg.id">
-        <span style="color: #666;">{{ msg.timestamp }}</span> {{ msg.message }}
+    <div class="log-section" v-if="logMessages.length > 0">
+      <div class="log-header" @click="toggleLogExpanded">
+        <div class="log-header-left">
+          <span class="log-toggle-icon">{{ logExpanded ? '▼' : '▶' }}</span>
+          <span>Activity Log ({{ logMessages.length }} messages)</span>
+          <span v-if="logExpanded && !logAutoScroll" class="auto-scroll-indicator">Scroll paused</span>
+        </div>
+        <button @click.stop="clearLog" class="clear-log-button">Clear</button>
+      </div>
+      <div class="log" v-show="logExpanded" ref="logContainer" @scroll="handleLogScroll">
+        <div v-for="msg in visibleLogMessages" :key="msg.id" class="log-entry">
+          <span class="log-timestamp">{{ msg.timestamp }}</span> 
+          <span class="log-message">{{ msg.message }}</span>
+        </div>
+        <div v-if="logMessages.length > maxVisibleMessages" class="log-entry log-info">
+          ... {{ logMessages.length - maxVisibleMessages }} earlier messages (scroll to top to load)
+        </div>
       </div>
     </div>
   </div>
@@ -640,7 +746,7 @@ const COMMAND={GET_STATUS:5,SET_EXCHANGE:7,GET_VERSION:10,GET_SERIAL:11,FW_IMAGE
   </div>
 </div>
 
-<script>const common_options={chart:{animations:{enabled:false},zoom:{autoScaleYaxis:true}},tooltip:{intersect:false},grid:{xaxis:{lines:{show:true}}},dataLabels:{enabled:false}};var app=new Vue({el:"#app",components:{apexchart:VueApexCharts},data:function(){return{device:null,isConnected:false,isConnecting:false,connectionStatus:"Disconnected",connectionStatusText:"Not connected to device",deviceInfo:{firmwareVersion:null,serialNumber:null,connectionType:null,lastUpdate:null},currentData:{countRate:0,doseRate:0,countRateError:0,doseRateError:0},countRateChart:null,doseRateChart:null,countRateTimeSeries:null,doseRateTimeSeries:null,autoUpdateEnabled:false,updateInterval:1e3,updateTimer:null,logMessages:[],logCounter:0,spectrum_duration:0,spectrum_series:[],spectrum_coef:[0,0,0],spectrum_accum:false,spectrum_logarithmic:true,spectrum_energy:true,rates_series:[{name:"Count Rate",data:[],yAxisIndex:0},{name:"Dose Rate",data:[],yAxisIndex:1}],ratesChartOptions:{...common_options,title:{text:"CountRate & DoseRate"},xaxis:{type:"datetime"},yaxis:[{seriesName:"countrate",title:{text:"CPS"},labels:{formatter:v=>v.toFixed(2)+" CPS"}},{seriesName:"doserate",title:{text:"μSv/h"},labels:{formatter:v=>v.toFixed(6)+" μSv/h"},opposite:true}]}}},watch:{spectrum_accum(){if(this.isConnected){this.updateSpectrum()}}},computed:{spectrumChartOptions(){const a0=this.spectrum_coef[0],a1=this.spectrum_coef[1],a2=this.spectrum_coef[2];const fmt=this.spectrum_energy?c=>(a0+a1*c+a2*c*c).toFixed(0):undefined;const title=this.spectrum_energy?"keV":"channel";return{...common_options,title:{text:`Spectrum, ${this.spectrum_duration} seconds`},xaxis:{type:"numeric",title:{text:title},tickAmount:25,labels:{formatter:fmt}},yaxis:{logarithmic:this.spectrum_logarithmic,decimalsInFloat:0},plotOptions:{bar:{columnWidth:"95%"}}}}},created(){this.log("RadiaCode Standalone Demo initialized");this.log("Connect to your device using Bluetooth or USB")},beforeDestroy:function(){if(this.updateTimer){clearInterval(this.updateTimer)}if(this.device&&this.isConnected){this.device.disconnect()}},methods:{log(message){const timestamp=(new Date).toLocaleTimeString();this.logMessages.push({id:this.logCounter++,timestamp:timestamp,message:message});if(this.logMessages.length>50){this.logMessages=this.logMessages.slice(-50)}this.$nextTick(()=>{const logEl=document.querySelector(".log");if(logEl){logEl.scrollTop=logEl.scrollHeight}})},async connectBluetooth(){try{this.isConnecting=true;this.connectionStatus="Connecting";this.connectionStatusText="Connecting via Bluetooth...";this.log("Attempting Bluetooth connection...");this.device=new RadiaCode(null,true);await this.device.connect();this.isConnected=true;this.connectionStatus="Connected";this.connectionStatusText="Connected via Bluetooth";this.deviceInfo.connectionType="Bluetooth";this.log("✅ Connected successfully via Bluetooth");window.device=this.device;await this.initializeDevice()}catch(error){this.log(`❌ Bluetooth connection failed: ${error.message}`);this.connectionStatus="Disconnected";this.connectionStatusText=`Connection failed: ${error.message}`;this.device=null}finally{this.isConnecting=false}},async connectUSB(){try{this.isConnecting=true;this.connectionStatus="Connecting";this.connectionStatusText="Connecting via USB...";this.log("Attempting USB connection...");if(!RadiaCodeUSBTransport.isSupported()){throw new Error("Web USB is not supported in this browser")}this.device=new RadiaCode;await this.device.connect();this.isConnected=true;this.connectionStatus="Connected";this.connectionStatusText="Connected via USB";this.deviceInfo.connectionType="USB";this.log("✅ Connected successfully via USB");await this.initializeDevice()}catch(error){this.log(`❌ USB connection failed: ${error.message}`);this.connectionStatus="Disconnected";this.connectionStatusText=`Connection failed: ${error.message}`;this.device=null}finally{this.isConnecting=false}},async initializeDevice(){try{this.log("Getting firmware version...");const version=await this.device.getFirmwareVersion();this.deviceInfo.firmwareVersion=`v${version.target.major}.${version.target.minor}`;this.log(`Firmware: ${this.deviceInfo.firmwareVersion}`);this.log("Getting serial number...");const serial=await this.device.getSerialNumber();this.deviceInfo.serialNumber=serial;this.log(`Device: ${serial}`);this.log("Testing initial data buffer...");const testData=await this.device.data_buf();this.log(`Got ${testData.length} records from data buffer`);for(let i=0;i<Math.min(3,testData.length);i++){const record=testData[i];if(record instanceof RealTimeData){this.log(`Sample data[${i}]: CR=${record.count_rate}, DR=${record.dose_rate}, CR_err=${record.count_rate_err}, DR_err=${record.dose_rate_err}`)}else{this.log(`Sample data[${i}]: ${record.constructor.name}`)}}this.log("Getting initial spectrum...");await this.updateSpectrum();this.toggleAutoUpdate();this.initializeSmoothieChart();this.log("✅ Device initialization completed successfully")}catch(error){this.log(`❌ Device initialization failed: ${error.message}`)}},initializeSmoothieChart(){this.countRateTimeSeries=new TimeSeries;this.doseRateTimeSeries=new TimeSeries;this.countRateChart=new SmoothieChart({responsive:true,millisPerPixel:10,maxValueScale:1.1,minValueScale:1.1,tooltip:true,grid:{strokeStyle:"rgba(119, 119, 119, 0.2)",fillStyle:"rgba(0, 0, 0, 0.02)",lineWidth:1,millisPerLine:5e3,verticalSections:6},labels:{fillStyle:"rgba(0, 0, 0, 0.6)",fontSize:12}});this.doseRateChart=new SmoothieChart({responsive:true,millisPerPixel:10,maxValueScale:1.1,minValueScale:1.1,tooltip:true,grid:{strokeStyle:"rgba(119, 119, 119, 0.2)",fillStyle:"rgba(0, 0, 0, 0.02)",lineWidth:1,millisPerLine:5e3,verticalSections:6},labels:{fillStyle:"rgba(0, 0, 0, 0.6)",fontSize:12}});this.countRateChart.addTimeSeries(this.countRateTimeSeries,{strokeStyle:"rgba(0, 123, 255, 1)",fillStyle:"rgba(0, 123, 255, 0.1)",lineWidth:2});this.doseRateChart.addTimeSeries(this.doseRateTimeSeries,{strokeStyle:"rgba(40, 167, 69, 1)",fillStyle:"rgba(40, 167, 69, 0.1)",lineWidth:2});this.$nextTick(()=>{const countCanvas=document.getElementById("countRateChart");const doseCanvas=document.getElementById("doseRateChart");if(countCanvas&&doseCanvas){this.countRateChart.streamTo(countCanvas,1500);this.doseRateChart.streamTo(doseCanvas,1500);this.log("✅ Real-time charts initialized")}})},destroySmoothieChart(){if(this.countRateChart){this.countRateChart.stop();this.countRateChart=null}if(this.doseRateChart){this.doseRateChart.stop();this.doseRateChart=null}this.countRateTimeSeries=null;this.doseRateTimeSeries=null},async disconnect(){try{if(this.updateTimer){clearInterval(this.updateTimer);this.updateTimer=null;this.autoUpdateEnabled=false}if(this.device){await this.device.disconnect();this.log("✅ Disconnected successfully")}this.destroySmoothieChart();this.device=null;this.isConnected=false;this.connectionStatus="Disconnected";this.connectionStatusText="Not connected to device";this.deviceInfo={firmwareVersion:null,serialNumber:null,connectionType:null,lastUpdate:null};this.currentData={countRate:0,doseRate:0,countRateError:0,doseRateError:0}}catch(error){this.log(`❌ Disconnect failed: ${error.message}`)}},toggleAutoUpdate(){if(this.autoUpdateEnabled){if(this.updateTimer){clearInterval(this.updateTimer);this.updateTimer=null}this.autoUpdateEnabled=false;this.log("Auto-update stopped")}else{this.autoUpdateEnabled=true;this.updateTimer=setInterval(()=>{this.updateRatesData()},this.updateInterval);this.log(`Auto-update started (${this.updateInterval/1e3}s interval)`)}},async updateRatesData(){if(!this.isConnected||!this.device)return;try{const data=await this.device.data_buf();const now=(new Date).getTime();for(const record of data){if(record instanceof RealTimeData){this.log(`RealTimeData: CR=${record.count_rate.toFixed(2)} CPS, DR=${record.dose_rate.toFixed(6)} µSv/h, flags=0x${record.flags.toString(16)}`);this.currentData.countRate=record.count_rate;this.currentData.doseRate=record.dose_rate;this.currentData.countRateError=record.count_rate_err;this.currentData.doseRateError=record.dose_rate_err;if(this.countRateTimeSeries&&this.doseRateTimeSeries){this.countRateTimeSeries.append(now,record.count_rate);this.doseRateTimeSeries.append(now,record.dose_rate)}this.rates_series[0].data.push([now,record.count_rate]);this.rates_series[1].data.push([now,record.dose_rate]);this.deviceInfo.lastUpdate=(new Date).toLocaleTimeString();if(this.rates_series[0].data.length>100){this.rates_series[0].data=this.rates_series[0].data.slice(-100);this.rates_series[1].data=this.rates_series[1].data.slice(-100)}this.rates_series=[...this.rates_series];break}}}catch(error){this.log(`❌ Failed to update rates data: ${error.message}`)}},async updateSpectrum(){if(!this.isConnected||!this.device)return;try{this.log("Updating spectrum...");const spectrum=this.spectrum_accum?await this.device.spectrum_accum():await this.device.spectrum();this.spectrum_duration=spectrum.duration;this.spectrum_coef=[spectrum.a0,spectrum.a1,spectrum.a2];const counts=spectrum.counts;const data=[];if(this.spectrum_energy){for(let i=0;i<counts.length;i++){const energy=spectrum.channelToEnergy(i+.5);data.push([energy,counts[i]])}}else{for(let i=0;i<counts.length;i++){data.push([i,counts[i]])}}this.spectrum_series=[{name:"Counts",data:data}];this.log(`✅ Spectrum updated: ${spectrum.duration}s, ${spectrum.getTotalCounts()} total counts`)}catch(error){this.log(`❌ Failed to update spectrum: ${error.message}`)}},async resetSpectrum(){if(!this.isConnected||!this.device)return;try{this.log("Resetting spectrum...");await this.device.spectrum_reset();this.log("✅ Spectrum reset successfully");setTimeout(()=>{this.updateSpectrum()},1e3)}catch(error){this.log(`❌ Failed to reset spectrum: ${error.message}`)}},clearRatesData(){this.rates_series[0].data=[];this.rates_series[1].data=[];this.rates_series=[...this.rates_series];this.log("Rates data cleared")}}});
+<script>const common_options={chart:{animations:{enabled:false},zoom:{autoScaleYaxis:true}},tooltip:{intersect:false},grid:{xaxis:{lines:{show:true}}},dataLabels:{enabled:false}};var app=new Vue({el:"#app",components:{apexchart:VueApexCharts},data:function(){return{device:null,isConnected:false,isConnecting:false,connectionStatus:"Disconnected",connectionStatusText:"Not connected to device",deviceInfo:{firmwareVersion:null,serialNumber:null,connectionType:null,lastUpdate:null},currentData:{countRate:0,doseRate:0,countRateError:0,doseRateError:0},countRateChart:null,doseRateChart:null,countRateTimeSeries:null,doseRateTimeSeries:null,autoUpdateEnabled:false,updateInterval:1e3,updateTimer:null,logMessages:[],logCounter:0,logExpanded:true,maxVisibleMessages:500,logAutoScroll:true,spectrum_duration:0,spectrum_series:[],spectrum_coef:[0,0,0],spectrum_accum:false,spectrum_logarithmic:true,spectrum_energy:true,rates_series:[{name:"Count Rate",data:[],yAxisIndex:0},{name:"Dose Rate",data:[],yAxisIndex:1}],ratesChartOptions:{...common_options,title:{text:"CountRate & DoseRate"},xaxis:{type:"datetime"},yaxis:[{seriesName:"countrate",title:{text:"CPS"},labels:{formatter:v=>v.toFixed(2)+" CPS"}},{seriesName:"doserate",title:{text:"μSv/h"},labels:{formatter:v=>v.toFixed(6)+" μSv/h"},opposite:true}]}}},watch:{spectrum_accum(){if(this.isConnected){this.updateSpectrum()}}},computed:{visibleLogMessages(){if(this.logMessages.length<=this.maxVisibleMessages){return this.logMessages}return this.logMessages.slice(-this.maxVisibleMessages)},spectrumChartOptions(){const a0=this.spectrum_coef[0],a1=this.spectrum_coef[1],a2=this.spectrum_coef[2];const fmt=this.spectrum_energy?c=>(a0+a1*c+a2*c*c).toFixed(0):undefined;const title=this.spectrum_energy?"keV":"channel";return{...common_options,title:{text:`Spectrum, ${this.spectrum_duration} seconds`},xaxis:{type:"numeric",title:{text:title},tickAmount:25,labels:{formatter:fmt}},yaxis:{logarithmic:this.spectrum_logarithmic,decimalsInFloat:0},plotOptions:{bar:{columnWidth:"95%"}}}}},created(){this.log("RadiaCode Standalone Demo initialized");this.log("Connect to your device using Bluetooth or USB")},beforeDestroy:function(){if(this.updateTimer){clearInterval(this.updateTimer)}if(this.device&&this.isConnected){this.device.disconnect()}},methods:{log(message){const timestamp=(new Date).toLocaleTimeString();this.logMessages.push({id:this.logCounter++,timestamp:timestamp,message:message});this.$nextTick(()=>{if(this.logExpanded&&this.logAutoScroll){const logEl=document.querySelector(".log");if(logEl){logEl.scrollTop=logEl.scrollHeight}}})},handleLogScroll(){const logEl=this.$refs.logContainer;if(logEl){const isAtBottom=logEl.scrollHeight-logEl.scrollTop-logEl.clientHeight<5;this.logAutoScroll=isAtBottom}},toggleLogExpanded(){this.logExpanded=!this.logExpanded;if(this.logExpanded){this.logAutoScroll=true;this.$nextTick(()=>{const logEl=document.querySelector(".log");if(logEl){logEl.scrollTop=logEl.scrollHeight}})}},clearLog(){this.logMessages=[];this.logCounter=0;this.logAutoScroll=true;this.log("Log cleared")},async connectBluetooth(){try{this.isConnecting=true;this.connectionStatus="Connecting";this.connectionStatusText="Connecting via Bluetooth...";this.log("Attempting Bluetooth connection...");this.device=new RadiaCode(null,true);await this.device.connect();this.isConnected=true;this.connectionStatus="Connected";this.connectionStatusText="Connected via Bluetooth";this.deviceInfo.connectionType="Bluetooth";this.log("✅ Connected successfully via Bluetooth");window.device=this.device;await this.initializeDevice()}catch(error){this.log(`❌ Bluetooth connection failed: ${error.message}`);this.connectionStatus="Disconnected";this.connectionStatusText=`Connection failed: ${error.message}`;this.device=null}finally{this.isConnecting=false}},async connectUSB(){try{this.isConnecting=true;this.connectionStatus="Connecting";this.connectionStatusText="Connecting via USB...";this.log("Attempting USB connection...");if(!RadiaCodeUSBTransport.isSupported()){throw new Error("Web USB is not supported in this browser")}this.device=new RadiaCode;await this.device.connect();this.isConnected=true;this.connectionStatus="Connected";this.connectionStatusText="Connected via USB";this.deviceInfo.connectionType="USB";this.log("✅ Connected successfully via USB");await this.initializeDevice()}catch(error){this.log(`❌ USB connection failed: ${error.message}`);this.connectionStatus="Disconnected";this.connectionStatusText=`Connection failed: ${error.message}`;this.device=null}finally{this.isConnecting=false}},async initializeDevice(){try{this.log("Getting firmware version...");const version=await this.device.getFirmwareVersion();this.deviceInfo.firmwareVersion=`v${version.target.major}.${version.target.minor}`;this.log(`Firmware: ${this.deviceInfo.firmwareVersion}`);this.log("Getting serial number...");const serial=await this.device.getSerialNumber();this.deviceInfo.serialNumber=serial;this.log(`Device: ${serial}`);this.log("Testing initial data buffer...");const testData=await this.device.data_buf();this.log(`Got ${testData.length} records from data buffer`);for(let i=0;i<Math.min(3,testData.length);i++){const record=testData[i];if(record instanceof RealTimeData){this.log(`Sample data[${i}]: CR=${record.count_rate}, DR=${record.dose_rate}, CR_err=${record.count_rate_err}, DR_err=${record.dose_rate_err}`)}else{this.log(`Sample data[${i}]: ${record.constructor.name}`)}}this.log("Getting initial spectrum...");await this.updateSpectrum();this.toggleAutoUpdate();this.initializeSmoothieChart();this.log("✅ Device initialization completed successfully")}catch(error){this.log(`❌ Device initialization failed: ${error.message}`)}},initializeSmoothieChart(){this.countRateTimeSeries=new TimeSeries;this.doseRateTimeSeries=new TimeSeries;this.countRateChart=new SmoothieChart({responsive:true,millisPerPixel:10,maxValueScale:1.1,minValueScale:1.1,tooltip:true,grid:{strokeStyle:"rgba(119, 119, 119, 0.2)",fillStyle:"rgba(0, 0, 0, 0.02)",lineWidth:1,millisPerLine:5e3,verticalSections:6},labels:{fillStyle:"rgba(0, 0, 0, 0.6)",fontSize:12}});this.doseRateChart=new SmoothieChart({responsive:true,millisPerPixel:10,maxValueScale:1.1,minValueScale:1.1,tooltip:true,grid:{strokeStyle:"rgba(119, 119, 119, 0.2)",fillStyle:"rgba(0, 0, 0, 0.02)",lineWidth:1,millisPerLine:5e3,verticalSections:6},labels:{fillStyle:"rgba(0, 0, 0, 0.6)",fontSize:12}});this.countRateChart.addTimeSeries(this.countRateTimeSeries,{strokeStyle:"rgba(0, 123, 255, 1)",fillStyle:"rgba(0, 123, 255, 0.1)",lineWidth:2});this.doseRateChart.addTimeSeries(this.doseRateTimeSeries,{strokeStyle:"rgba(40, 167, 69, 1)",fillStyle:"rgba(40, 167, 69, 0.1)",lineWidth:2});this.$nextTick(()=>{const countCanvas=document.getElementById("countRateChart");const doseCanvas=document.getElementById("doseRateChart");if(countCanvas&&doseCanvas){this.countRateChart.streamTo(countCanvas,1500);this.doseRateChart.streamTo(doseCanvas,1500);this.log("✅ Real-time charts initialized")}})},destroySmoothieChart(){if(this.countRateChart){this.countRateChart.stop();this.countRateChart=null}if(this.doseRateChart){this.doseRateChart.stop();this.doseRateChart=null}this.countRateTimeSeries=null;this.doseRateTimeSeries=null},async disconnect(){try{if(this.updateTimer){clearInterval(this.updateTimer);this.updateTimer=null;this.autoUpdateEnabled=false}if(this.device){await this.device.disconnect();this.log("✅ Disconnected successfully")}this.destroySmoothieChart();this.device=null;this.isConnected=false;this.connectionStatus="Disconnected";this.connectionStatusText="Not connected to device";this.deviceInfo={firmwareVersion:null,serialNumber:null,connectionType:null,lastUpdate:null};this.currentData={countRate:0,doseRate:0,countRateError:0,doseRateError:0}}catch(error){this.log(`❌ Disconnect failed: ${error.message}`)}},toggleAutoUpdate(){if(this.autoUpdateEnabled){if(this.updateTimer){clearInterval(this.updateTimer);this.updateTimer=null}this.autoUpdateEnabled=false;this.log("Auto-update stopped")}else{this.autoUpdateEnabled=true;this.updateTimer=setInterval(()=>{this.updateRatesData()},this.updateInterval);this.log(`Auto-update started (${this.updateInterval/1e3}s interval)`)}},async updateRatesData(){if(!this.isConnected||!this.device)return;try{const data=await this.device.data_buf();const now=(new Date).getTime();for(const record of data){if(record instanceof RealTimeData){this.log(`RealTimeData: CR=${record.count_rate.toFixed(2)} CPS, DR=${record.dose_rate.toFixed(6)} µSv/h, flags=0x${record.flags.toString(16)}`);this.currentData.countRate=record.count_rate;this.currentData.doseRate=record.dose_rate;this.currentData.countRateError=record.count_rate_err;this.currentData.doseRateError=record.dose_rate_err;if(this.countRateTimeSeries&&this.doseRateTimeSeries){this.countRateTimeSeries.append(now,record.count_rate);this.doseRateTimeSeries.append(now,record.dose_rate)}this.rates_series[0].data.push([now,record.count_rate]);this.rates_series[1].data.push([now,record.dose_rate]);this.deviceInfo.lastUpdate=(new Date).toLocaleTimeString();if(this.rates_series[0].data.length>100){this.rates_series[0].data=this.rates_series[0].data.slice(-100);this.rates_series[1].data=this.rates_series[1].data.slice(-100)}this.rates_series=[...this.rates_series];break}}}catch(error){this.log(`❌ Failed to update rates data: ${error.message}`)}},async updateSpectrum(){if(!this.isConnected||!this.device)return;try{this.log("Updating spectrum...");const spectrum=this.spectrum_accum?await this.device.spectrum_accum():await this.device.spectrum();this.spectrum_duration=spectrum.duration;this.spectrum_coef=[spectrum.a0,spectrum.a1,spectrum.a2];const counts=spectrum.counts;const data=[];if(this.spectrum_energy){for(let i=0;i<counts.length;i++){const energy=spectrum.channelToEnergy(i+.5);data.push([energy,counts[i]])}}else{for(let i=0;i<counts.length;i++){data.push([i,counts[i]])}}this.spectrum_series=[{name:"Counts",data:data}];this.log(`✅ Spectrum updated: ${spectrum.duration}s, ${spectrum.getTotalCounts()} total counts`)}catch(error){this.log(`❌ Failed to update spectrum: ${error.message}`)}},async resetSpectrum(){if(!this.isConnected||!this.device)return;try{this.log("Resetting spectrum...");await this.device.spectrum_reset();this.log("✅ Spectrum reset successfully");setTimeout(()=>{this.updateSpectrum()},1e3)}catch(error){this.log(`❌ Failed to reset spectrum: ${error.message}`)}},clearRatesData(){this.rates_series[0].data=[];this.rates_series[1].data=[];this.rates_series=[...this.rates_series];this.log("Rates data cleared")}}});
 </script>
 </body>
 </html>
