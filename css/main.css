@@ -246,6 +246,42 @@ body {
 .device-info-item span {
   color: #495057;
 }
+
+/* Alarm Limits */
+.alarm-limits {
+  background: #fff3cd;
+  padding: 15px;
+  border-radius: 8px;
+  margin-bottom: 20px;
+  border: 1px solid #ffeaa7;
+}
+.alarm-limits h3 {
+  margin-top: 0;
+  color: #856404;
+}
+.alarm-limits-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+.alarm-item {
+  background: white;
+  padding: 10px;
+  border-radius: 5px;
+  border: 1px solid #ffeaa7;
+}
+.alarm-item label {
+  font-weight: bold;
+  color: #856404;
+  display: block;
+  margin-bottom: 5px;
+}
+.alarm-item span {
+  color: #495057;
+  font-family: 'Courier New', monospace;
+}
+
 .realtime-data {
   background: #f0f8e8;
   padding: 15px;

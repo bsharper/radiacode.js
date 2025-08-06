@@ -8,6 +8,7 @@
 <script src="https://cdn.jsdelivr.net/npm/vue-apexcharts"></script>
 <script src="smoothie.js"></script>
 <script src="radiacode.js"></script>
+
 </head>
 <link rel="stylesheet" href="css/fontello.css">
 <link rel="stylesheet" href="css/animation.css">
@@ -60,7 +61,7 @@
         </div>
         <button @click.stop="clearLog" class="clear-log-button">Clear</button>
       </div>
-      <div class="log" v-show="logExpanded" ref="logContainer" @scroll="handleLogScroll">
+      <div class="log" v-show="logExpanded" ref="logContainer" @scroll.passive="handleLogScroll">
         <div v-for="msg in visibleLogMessages" :key="msg.id" class="log-entry">
           <span class="log-timestamp">{{ msg.timestamp }}</span> 
           <span class="log-message">{{ msg.message }}</span>
@@ -91,6 +92,25 @@
       <div class="device-info-item">
         <label>Last Update:</label>
         <span>{{ deviceInfo.lastUpdate || 'Never' }}</span>
+      </div>
+    </div>
+  </div>
+  
+  <!-- Alarm Limits -->
+  <div class="alarm-limits" v-if="isConnected && alarmLimits">
+    <h3>Alarm Limits</h3>
+    <div class="alarm-limits-grid">
+      <div class="alarm-item">
+        <label>Count Rate L1/L2:</label>
+        <span>{{ alarmLimits.l1_count_rate.toFixed(1) }} / {{ alarmLimits.l2_count_rate.toFixed(1) }} {{ alarmLimits.count_unit }}</span>
+      </div>
+      <div class="alarm-item">
+        <label>Dose Rate L1/L2:</label>
+        <span>{{ alarmLimits.l1_dose_rate.toFixed(1) }} / {{ alarmLimits.l2_dose_rate.toFixed(1) }} µ{{ alarmLimits.dose_unit }}/h</span>
+      </div>
+      <div class="alarm-item">
+        <label>Dose L1/L2:</label>
+        <span>{{ alarmLimits.l1_dose.toFixed(1) }} / {{ alarmLimits.l2_dose.toFixed(1) }} µ{{ alarmLimits.dose_unit }}</span>
       </div>
     </div>
   </div>
@@ -198,6 +218,9 @@ var app = new Vue({
         lastUpdate: null
       },
       
+      // Alarm limits
+      alarmLimits: null,
+      
       // Real-time data
       currentData: {
         countRate: 0,
@@ -216,6 +239,8 @@ var app = new Vue({
       autoUpdateEnabled: false,
       updateInterval: 1000, // 1 second
       updateTimer: null,
+      realTimeDataMessages: 0,
+      realTimeDataMessagesMax: 5,
       
       // Logging
       logMessages: [],
@@ -348,6 +373,7 @@ var app = new Vue({
         this.log('Attempting Bluetooth connection...');
         
         this.device = new RadiaCode(null, true); // Request Bluetooth
+        window.device = this.device; // For debugging
         await this.device.connect();
         
         this.isConnected = true;
@@ -379,7 +405,8 @@ var app = new Vue({
           throw new Error('Web USB is not supported in this browser');
         }
         
-        this.device = new RadiaCode(); // Default to USB
+        this.device = new RadiaCode();
+        window.device = this.device; 
         await this.device.connect();
         
         this.isConnected = true;
@@ -402,7 +429,7 @@ var app = new Vue({
 
     async initializeDevice() {
       try {
-        // Get device info sequentially to avoid GATT conflicts
+        this.realTimeDataMessages = 0;
         this.log('Getting firmware version...');
         const version = await this.device.getFirmwareVersion();
         this.deviceInfo.firmwareVersion = `v${version.target.major}.${version.target.minor}`;
@@ -412,6 +439,11 @@ var app = new Vue({
         const serial = await this.device.getSerialNumber();
         this.deviceInfo.serialNumber = serial;
         this.log(`Device: ${serial}`);
+        
+        this.log('Getting alarm limits...');
+
+        // this.alarmLimits = await this.device.getAlarmLimits();
+        // this.log(`Alarm limits: CR L1/L2=${this.alarmLimits.l1_count_rate}/${this.alarmLimits.l2_count_rate} ${this.alarmLimits.count_unit}, DR L1/L2=${this.alarmLimits.l1_dose_rate}/${this.alarmLimits.l2_dose_rate} µ${this.alarmLimits.dose_unit}/h`);
         
         // Test data buffer to see what we get
         this.log('Testing initial data buffer...');
@@ -558,6 +590,10 @@ var app = new Vue({
           lastUpdate: null
         };
         
+        // Clear alarm limits
+        this.alarmLimits = null;
+        window.deviceInfo = deviceInfo;
+        
         // Reset current data
         this.currentData = {
           countRate: 0,
@@ -565,6 +601,7 @@ var app = new Vue({
           countRateError: 0,
           doseRateError: 0
         };
+        window.currentData = this.currentData;  
         
       } catch (error) {
         this.log(`❌ Disconnect failed: ${error.message}`);
@@ -596,13 +633,19 @@ var app = new Vue({
       try {
         const data = await this.device.data_buf();
         const now = new Date().getTime();
-        
+        window.data = data;
         // Process real-time data
         for (const record of data) {
           if (record instanceof RealTimeData) {
             // Debug logging - more detailed
-            this.log(`RealTimeData: CR=${record.count_rate.toFixed(2)} CPS, DR=${record.dose_rate.toFixed(6)} µSv/h, flags=0x${record.flags.toString(16)}`);
-            
+            //this.log(`RealTimeData: CR=${record.count_rate.toFixed(2)} CPS, DR=${record.dose_rate.toFixed(6)} µSv/h, flags=0x${record.flags.toString(16)}`);
+            this.realTimeDataMessages++;
+            if (this.realTimeDataMessages <= this.realTimeDataMessagesMax) {
+              this.log(`RealTimeData: CR=${record.count_rate.toFixed(2)} CPS, DR=${record.dose_rate.toFixed(6)} µSv/h, flags=0x${record.flags.toString(16)}`);
+            }  
+            if (this.realTimeDataMessages === this.realTimeDataMessagesMax) {
+              this.log(`RealTimeData: stopping display after ${this.realTimeDataMessagesMax} messages`);
+            }
             // Update current data
             this.currentData.countRate = record.count_rate;
             this.currentData.doseRate = record.dose_rate;
@@ -619,6 +662,10 @@ var app = new Vue({
             // Add to rates series
             this.rates_series[0].data.push([now, record.count_rate]);
             this.rates_series[1].data.push([now, record.dose_rate]);
+
+            window.dispatchEvent(new CustomEvent('update-cps', {
+              detail: { message: record, cps: record.count_rate }
+            }));
             
             // Update last update time
             this.deviceInfo.lastUpdate = new Date().toLocaleTimeString();
@@ -709,5 +756,6 @@ var app = new Vue({
   },
 });
 </script>
+<script src="sound.js"></script>
 </body>
 </html>

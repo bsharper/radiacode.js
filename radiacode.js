@@ -49,6 +49,200 @@ const VS = {
     ENERGY_CALIB: 0x202
 };
 
+// Virtual Special Function Register IDs (VSFR)
+const VSFR = {
+    DEVICE_CTRL:       0x0500,
+    DEVICE_LANG:       0x0502,
+    DEVICE_ON:         0x0503,
+    DEVICE_TIME:       0x0504,
+
+    DISP_CTRL:         0x0510,
+    DISP_BRT:          0x0511,
+    DISP_CONTR:        0x0512,
+    DISP_OFF_TIME:     0x0513,
+    DISP_ON:           0x0514,
+    DISP_DIR:          0x0515,
+    DISP_BACKLT_ON:    0x0516,
+
+    SOUND_CTRL:        0x0520,
+    SOUND_VOL:         0x0521,
+    SOUND_ON:          0x0522,
+    SOUND_BUTTON:      0x0523,
+
+    VIBRO_CTRL:        0x0530,
+    VIBRO_ON:          0x0531,
+
+    LEDS_CTRL:         0x0540,
+    LED0_BRT:          0x0541,
+    LED1_BRT:          0x0542,
+    LED2_BRT:          0x0543,
+    LED3_BRT:          0x0544,
+    LEDS_ON:           0x0545,
+
+    ALARM_MODE:        0x05E0,
+    PLAY_SIGNAL:       0x05E1,
+
+    MS_CTRL:           0x0600,
+    MS_MODE:           0x0601,
+    MS_SUB_MODE:       0x0602,
+    MS_RUN:            0x0603,
+
+    BLE_TX_PWR:        0x0700,
+
+    DR_LEV1_uR_h:      0x8000,
+    DR_LEV2_uR_h:      0x8001,
+    DS_LEV1_100uR:     0x8002,
+    DS_LEV2_100uR:     0x8003,
+    DS_UNITS:          0x8004,
+    CPS_FILTER:        0x8005,
+    RAW_FILTER:        0x8006,
+    DOSE_RESET:        0x8007,
+    CR_LEV1_cp10s:     0x8008,
+    CR_LEV2_cp10s:     0x8009,
+
+    USE_nSv_h:         0x800C,
+
+    CHN_TO_keV_A0:     0x8010,
+    CHN_TO_keV_A1:     0x8011,
+    CHN_TO_keV_A2:     0x8012,
+    CR_UNITS:          0x8013,
+    DS_LEV1_uR:        0x8014,
+    DS_LEV2_uR:        0x8015,
+
+    CPS:               0x8020,
+    DR_uR_h:           0x8021,
+    DS_uR:             0x8022,
+
+    TEMP_degC:         0x8024,
+    ACC_X:             0x8025,
+    ACC_Y:             0x8026,
+    ACC_Z:             0x8027,
+    OPT:               0x8028,
+
+    RAW_TEMP_degC:     0x8033,
+    TEMP_UP_degC:      0x8034,
+    TEMP_DN_degC:      0x8035,
+
+    VBIAS_mV:          0xC000,
+    COMP_LEV:          0xC001,
+    CALIB_MODE:        0xC002,
+    DPOT_RDAC:         0xC004,
+    DPOT_RDAC_EEPROM:  0xC005,
+    DPOT_TOLER:        0xC006,
+
+    SYS_MCU_ID0:       0xFFFF0000,
+    SYS_MCU_ID1:       0xFFFF0001,
+    SYS_MCU_ID2:       0xFFFF0002,
+
+    SYS_DEVICE_ID:     0xFFFF0005,
+    SYS_SIGNATURE:     0xFFFF0006,
+    SYS_RX_SIZE:       0xFFFF0007,
+    SYS_TX_SIZE:       0xFFFF0008,
+    SYS_BOOT_VERSION:  0xFFFF0009,
+    SYS_TARGET_VERSION:0xFFFF000A,
+    SYS_STATUS:        0xFFFF000B,
+    SYS_MCU_VREF:      0xFFFF000C,
+    SYS_MCU_TEMP:      0xFFFF000D,
+    SYS_FW_VER_BT:     0xFFFF010
+};
+
+// VSFR data format specifications (format string for data type)
+const VSFR_FORMATS = {
+    [VSFR.DEVICE_CTRL]:       'I', // uint32
+    [VSFR.DEVICE_LANG]:       'I', // uint32
+    [VSFR.DEVICE_ON]:         'I', // uint32
+    [VSFR.DEVICE_TIME]:       'I', // uint32
+
+    [VSFR.DISP_CTRL]:         'I', // uint32
+    [VSFR.DISP_BRT]:          'I', // uint32
+    [VSFR.DISP_CONTR]:        'I', // uint32
+    [VSFR.DISP_OFF_TIME]:     'I', // uint32
+    [VSFR.DISP_ON]:           'I', // uint32
+    [VSFR.DISP_DIR]:          'I', // uint32
+    [VSFR.DISP_BACKLT_ON]:    'I', // uint32
+
+    [VSFR.SOUND_CTRL]:        'I', // uint32
+    [VSFR.SOUND_VOL]:         'I', // uint32
+    [VSFR.SOUND_ON]:          'I', // uint32
+    [VSFR.SOUND_BUTTON]:      'I', // uint32
+
+    [VSFR.VIBRO_CTRL]:        'I', // uint32
+    [VSFR.VIBRO_ON]:          'I', // uint32
+
+    [VSFR.LEDS_CTRL]:         'I', // uint32
+    [VSFR.LED0_BRT]:          'I', // uint32
+    [VSFR.LED1_BRT]:          'I', // uint32
+    [VSFR.LED2_BRT]:          'I', // uint32
+    [VSFR.LED3_BRT]:          'I', // uint32
+    [VSFR.LEDS_ON]:           'I', // uint32
+
+    [VSFR.ALARM_MODE]:        'I', // uint32
+    [VSFR.PLAY_SIGNAL]:       'I', // uint32
+
+    [VSFR.MS_CTRL]:           'I', // uint32
+    [VSFR.MS_MODE]:           'I', // uint32
+    [VSFR.MS_SUB_MODE]:       'I', // uint32
+    [VSFR.MS_RUN]:            'I', // uint32
+
+    [VSFR.BLE_TX_PWR]:        'I', // uint32
+
+    [VSFR.DR_LEV1_uR_h]:      'I', // uint32
+    [VSFR.DR_LEV2_uR_h]:      'I', // uint32
+    [VSFR.DS_LEV1_100uR]:     'I', // uint32
+    [VSFR.DS_LEV2_100uR]:     'I', // uint32
+    [VSFR.DS_UNITS]:          'I', // uint32 (boolean flag)
+    [VSFR.CPS_FILTER]:        'I', // uint32
+    [VSFR.RAW_FILTER]:        'I', // uint32
+    [VSFR.DOSE_RESET]:        'I', // uint32
+    [VSFR.CR_LEV1_cp10s]:     'I', // uint32
+    [VSFR.CR_LEV2_cp10s]:     'I', // uint32
+
+    [VSFR.USE_nSv_h]:         'I', // uint32
+
+    [VSFR.CHN_TO_keV_A0]:     'I', // uint32
+    [VSFR.CHN_TO_keV_A1]:     'I', // uint32
+    [VSFR.CHN_TO_keV_A2]:     'I', // uint32
+    [VSFR.CR_UNITS]:          'I', // uint32 (boolean flag)
+    [VSFR.DS_LEV1_uR]:        'I', // uint32
+    [VSFR.DS_LEV2_uR]:        'I', // uint32
+
+    [VSFR.CPS]:               'I', // uint32
+    [VSFR.DR_uR_h]:           'I', // uint32
+    [VSFR.DS_uR]:             'I', // uint32
+
+    [VSFR.TEMP_degC]:         'I', // uint32
+    [VSFR.ACC_X]:             'I', // uint32
+    [VSFR.ACC_Y]:             'I', // uint32
+    [VSFR.ACC_Z]:             'I', // uint32
+    [VSFR.OPT]:               'I', // uint32
+
+    [VSFR.RAW_TEMP_degC]:     'I', // uint32
+    [VSFR.TEMP_UP_degC]:      'I', // uint32
+    [VSFR.TEMP_DN_degC]:      'I', // uint32
+
+    [VSFR.VBIAS_mV]:          'I', // uint32
+    [VSFR.COMP_LEV]:          'I', // uint32
+    [VSFR.CALIB_MODE]:        'I', // uint32
+    [VSFR.DPOT_RDAC]:         'I', // uint32
+    [VSFR.DPOT_RDAC_EEPROM]:  'I', // uint32
+    [VSFR.DPOT_TOLER]:        'I', // uint32
+
+    [VSFR.SYS_MCU_ID0]:       'I', // uint32
+    [VSFR.SYS_MCU_ID1]:       'I', // uint32
+    [VSFR.SYS_MCU_ID2]:       'I', // uint32
+
+    [VSFR.SYS_DEVICE_ID]:     'I', // uint32
+    [VSFR.SYS_SIGNATURE]:     'I', // uint32
+    [VSFR.SYS_RX_SIZE]:       'I', // uint32
+    [VSFR.SYS_TX_SIZE]:       'I', // uint32
+    [VSFR.SYS_BOOT_VERSION]:  'I', // uint32
+    [VSFR.SYS_TARGET_VERSION]:'I', // uint32
+    [VSFR.SYS_STATUS]:        'I', // uint32
+    [VSFR.SYS_MCU_VREF]:      'I', // uint32
+    [VSFR.SYS_MCU_TEMP]:      'I', // uint32
+    [VSFR.SYS_FW_VER_BT]:     'I'  // uint32
+};
+
 // Error classes
 class DeviceNotFound extends Error {
     constructor(message) {
@@ -250,6 +444,22 @@ class Spectrum {
      */
     getEnergies() {
         return this.counts.map((_, index) => this.channelToEnergy(index + 0.5));
+    }
+}
+
+/**
+ * Device alarm limits configuration (matching Python AlarmLimits)
+ */
+class AlarmLimits {
+    constructor(l1_count_rate, l2_count_rate, l1_dose_rate, l2_dose_rate, l1_dose, l2_dose, dose_unit, count_unit) {
+        this.l1_count_rate = l1_count_rate;    // Level 1 count rate alarm threshold
+        this.l2_count_rate = l2_count_rate;    // Level 2 count rate alarm threshold
+        this.l1_dose_rate = l1_dose_rate;      // Level 1 dose rate alarm threshold
+        this.l2_dose_rate = l2_dose_rate;      // Level 2 dose rate alarm threshold
+        this.l1_dose = l1_dose;                // Level 1 accumulated dose alarm threshold
+        this.l2_dose = l2_dose;                // Level 2 accumulated dose alarm threshold
+        this.dose_unit = dose_unit;            // Dose unit ('Sv' or 'R')
+        this.count_unit = count_unit;          // Count rate unit ('cpm' or 'cps')
     }
 }
 
@@ -494,6 +704,7 @@ class RadiaCodeUSBTransport extends RadiaCodeTransport {
         this.interface = null;
         this.serialNumber = serialNumber;
         this.timeoutMs = timeoutMs;
+        this.usbDebug = false;
         // Fixed endpoint numbers matching Python implementation
         this.endpointOut = 1;    // Write endpoint (0x1 in Python)
         this.endpointIn = 1;     // Read endpoint (0x81 in Python, but WebUSB uses just the number)
@@ -617,13 +828,13 @@ class RadiaCodeUSBTransport extends RadiaCodeTransport {
         if (this.isClosing) throw new ConnectionClosed('Connection is closing');
 
         try {
-            console.log(`Sending ${data.byteLength} bytes to endpoint ${this.endpointOut}:`, Array.from(new Uint8Array(data)).map(b => '0x' + b.toString(16).padStart(2, '0')).join(' '));
+            if (this.usbDebug) console.log(`Sending ${data.byteLength} bytes to endpoint ${this.endpointOut}:`, Array.from(new Uint8Array(data)).map(b => '0x' + b.toString(16).padStart(2, '0')).join(' '));
             const result = await this.device.transferOut(this.endpointOut, data);
             
             if (result.status !== 'ok') {
                 throw new Error(`USB transfer failed: ${result.status}`);
             }
-            console.log(`Successfully sent ${result.bytesWritten} bytes`);
+            if (this.usbDebug) console.log(`Successfully sent ${result.bytesWritten} bytes`);
             
             // Add a small delay after sending to ensure device processes the command
             await new Promise(resolve => setTimeout(resolve, 10));
@@ -652,7 +863,7 @@ class RadiaCodeUSBTransport extends RadiaCodeTransport {
             // First, try to read initial data with retries like Python implementation
             while (trials < maxTrials) {
                 try {
-                    console.log(`Attempting to read from endpoint ${this.endpointIn}, trial ${trials + 1}`);
+                    if (this.usbDebug) console.log(`Attempting to read from endpoint ${this.endpointIn}, trial ${trials + 1}`);
                     
                     // Use 256 bytes like Python implementation (this is buffer size, not packet size)
                     const transferPromise = this.device.transferIn(this.endpointIn, 256);
@@ -663,7 +874,7 @@ class RadiaCodeUSBTransport extends RadiaCodeTransport {
                     }
 
                     initialData = new Uint8Array(result.data.buffer);
-                    console.log(`Received ${initialData.length} bytes on trial ${trials + 1}`);
+                    if (this.usbDebug) console.log(`Received ${initialData.length} bytes on trial ${trials + 1}`);
                     
                     if (initialData.length > 0) {
                         break;
@@ -696,13 +907,13 @@ class RadiaCodeUSBTransport extends RadiaCodeTransport {
 
             const dataView = new DataView(initialData.buffer, 0, 4);
             const responseLength = dataView.getUint32(0, true);
-            console.log(`Expected response length: ${responseLength}`);
+            if (this.usbDebug) console.log(`Expected response length: ${responseLength}`);
             
             let responseData = initialData.slice(4);
 
             while (responseData.length < responseLength) {
                 const remainingBytes = responseLength - responseData.length;
-                console.log(`Reading additional ${remainingBytes} bytes...`);
+                if (this.usbDebug) console.log(`Reading additional ${remainingBytes} bytes...`);
                 
                 const readSize = Math.min(remainingBytes, 256);
                 const transferPromise = this.device.transferIn(this.endpointIn, readSize);
@@ -719,7 +930,7 @@ class RadiaCodeUSBTransport extends RadiaCodeTransport {
                 responseData = combined;
             }
 
-            console.log(`Successfully received complete response: ${responseData.length} bytes`);
+            if (this.usbDebug) console.log(`Successfully received complete response: ${responseData.length} bytes`);
             return new BytesBuffer(responseData);
 
         } catch (error) {
@@ -824,18 +1035,19 @@ function decodeDataBuffer(buffer, baseTime) {
             const temperature = br.readUint16LE();
             const charge_level = br.readUint16LE();
             const flags = br.readUint16LE();
-            
-            ret.push(new RareData(
+            let rd = new RareData(
                 dt,
                 duration,
                 dose,
                 (temperature - 2000) / 100,
                 charge_level / 100,
                 flags
-            ));
+            );
+            window.latestRareData = rd; // Store latest rare data globally
+            ret.push(rd);
         } else {
             // Skip unknown data types
-            console.warn(`Unknown data type: eid=${eid}, gid=${gid}`);
+            //console.warn(`Unknown data type: eid=${eid}, gid=${gid}`);
             break;
         }
     }
@@ -924,7 +1136,7 @@ class RadiaCodeDevice {
     constructor(transport) {
         this.transport = transport;
         this.sequenceNumber = 0;
-        this.debug = true;
+        this.debug = false;
         this.baseTime = new Date();
         this.spectrumFormatVersion = 1;
         
@@ -993,7 +1205,9 @@ class RadiaCodeDevice {
         }
         
         if (this.debug) {
-            console.log(`Command ${command} executed successfully, response length: ${response.size()}`);
+            const cmdName = this.commandLookup[command] || command;
+            console.log(`Command ${cmdName} (${command}) executed successfully, response length: ${response.size()}`);
+            console.log(response);
         }
         
         return response;
@@ -1106,6 +1320,7 @@ class RadiaCodeDevice {
         
         const stringData = response.read(flen);
         const decoder = new TextDecoder('ascii');
+        if (this.debug) console.log(`Read virtual string (command ${commandId}):`, stringData);
         return decoder.decode(stringData);
     }
 
@@ -1175,6 +1390,97 @@ class RadiaCodeDevice {
         return [br.readFloatLE(), br.readFloatLE(), br.readFloatLE()];
     }
 
+    /**
+     * Read multiple VSFRs in a single batch operation
+     * @param {Array<number>} vsfrIds - Array of VSFR IDs to read
+     * @returns {Array<number>} Array of decoded values
+     */
+    async batchReadVsfrs(vsfrIds) {
+        const nvsfr = vsfrIds.length;
+        if (nvsfr === 0) {
+            throw new Error('No VSFRs specified');
+        }
+
+        // Create the batch read VSFR command payload:
+        // First uint32: number of VSFRs to read
+        // Followed by each VSFR ID as uint32
+        const payloadSize = (1 + nvsfr) * 4;
+        const payload = new ArrayBuffer(payloadSize);
+        const view = new DataView(payload);
+        
+        view.setUint32(0, nvsfr, true); // little-endian
+        for (let i = 0; i < nvsfr; i++) {
+            view.setUint32((i + 1) * 4, vsfrIds[i], true);
+        }
+
+        const response = await this.execute(COMMAND.RD_VIRT_SFR_BATCH, new Uint8Array(payload));
+
+        // First uint32 is a bitmask indicating which VSFRs were successfully read
+        const validFlags = response.readUint32LE();
+        const expectedFlags = (1 << nvsfr) - 1;
+        
+        if (validFlags !== expectedFlags) {
+            const validBits = validFlags.toString(2).padStart(nvsfr, '0');
+            const expectedBits = expectedFlags.toString(2).padStart(nvsfr, '0');
+            throw new Error(`Unexpected validity flags, bad vsfr_id? ${validBits} != ${expectedBits}`);
+        }
+
+        // Read the remaining data as uint32 values
+        const ret = [];
+        for (let i = 0; i < nvsfr; i++) {
+            const rawValue = response.readUint32LE();
+            
+            // Decode based on VSFR format - for now all are uint32 ('I' format)
+            const format = VSFR_FORMATS[vsfrIds[i]];
+            if (format === 'I') {
+                ret.push(rawValue);
+            } else {
+                // Handle other formats if needed in the future
+                ret.push(rawValue);
+            }
+        }
+
+        if (response.size() !== 0) {
+            throw new Error('Unexpected remaining data in batch VSFR response');
+        }
+
+        return ret;
+    }
+
+    /**
+     * Retrieve the alarm limits configuration from the device
+     * @returns {AlarmLimits} Device alarm limits configuration
+     */
+    async getAlarmLimits() {
+        const regs = [
+            VSFR.CR_LEV1_cp10s,
+            VSFR.CR_LEV2_cp10s,
+            VSFR.DR_LEV1_uR_h,
+            VSFR.DR_LEV2_uR_h,
+            VSFR.DS_LEV1_uR,
+            VSFR.DS_LEV2_uR,
+            VSFR.DS_UNITS,
+            VSFR.CR_UNITS,
+        ];
+
+        const resp = await this.batchReadVsfrs(regs);
+
+        const doseMultiplier = resp[6] ? 100 : 1;
+        const countMultiplier = resp[7] ? 60 : 1;
+        
+        return new AlarmLimits(
+            resp[0] / 10 * countMultiplier,    // l1_count_rate
+            resp[1] / 10 * countMultiplier,    // l2_count_rate
+            resp[2] / doseMultiplier,          // l1_dose_rate
+            resp[3] / doseMultiplier,          // l2_dose_rate
+            resp[4] / 1e6 / doseMultiplier,    // l1_dose
+            resp[5] / 1e6 / doseMultiplier,    // l2_dose
+            resp[6] ? 'Sv' : 'R',              // dose_unit
+            resp[7] ? 'cpm' : 'cps'            // count_unit
+        );
+    }
+
+    
     /**
      * Reset the current spectrum data to zero
      */
@@ -1291,14 +1597,14 @@ class RadiaCode extends RadiaCodeDevice {
     }
 
     /**
-     * Get serial number (matching Python method name)
+     * Get serial number
      */
     async serial_number() {
         return await this.getSerialNumber();
     }
 
     /**
-     * Get hardware serial number (matching Python method name)
+     * Get hardware serial number 
      */
     async hw_serial_number() {
         return await this.getHardwareSerialNumber();
@@ -1322,8 +1628,10 @@ if (typeof window !== 'undefined') {
     window.DoseRateDB = DoseRateDB;
     window.RareData = RareData;
     window.Spectrum = Spectrum;
+    window.AlarmLimits = AlarmLimits;
     window.COMMAND = COMMAND;
     window.VS = VS;
+    window.VSFR = VSFR;
     window.DeviceNotFound = DeviceNotFound;
     window.ConnectionClosed = ConnectionClosed;
     window.TimeoutError = TimeoutError;
@@ -1343,8 +1651,10 @@ if (typeof module !== 'undefined' && module.exports) {
         DoseRateDB,
         RareData,
         Spectrum,
+        AlarmLimits,
         COMMAND,
         VS,
+        VSFR,
         DeviceNotFound,
         ConnectionClosed,
         TimeoutError,
