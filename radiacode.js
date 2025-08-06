@@ -753,23 +753,19 @@ class RadiaCodeUSBTransport extends RadiaCodeTransport {
                 }))
             });
             
-            // Use fixed endpoints like Python implementation
-            // Python uses 0x1 for write and 0x81 for read
-            // In WebUSB, we just use the endpoint number without direction bits
             this.endpointOut = 1;
             this.endpointIn = 1;
-            console.log(`🔌 Using fixed endpoints: OUT=${this.endpointOut}, IN=${this.endpointIn}`);
+            if (this.usbDebug) console.log(`🔌 Using fixed endpoints: OUT=${this.endpointOut}, IN=${this.endpointIn}`);
 
 
             // HACK: not sure why this isn't needed, but it makes things work if I comment it out
 
             //await this.clearPendingData();
 
-            // Add a small delay to ensure device is ready
             await new Promise(resolve => setTimeout(resolve, 50));
 
             this.isConnected = true;
-            console.log('RadiaCode USB device connected successfully');
+            if (this.usbDebug) console.log('RadiaCode USB device connected successfully');
             return true;
 
         } catch (error) {
@@ -779,7 +775,7 @@ class RadiaCodeUSBTransport extends RadiaCodeTransport {
     }
 
     async clearPendingData() {
-        console.log(`Clearing pending data from USB device...`);
+        if (this.usbDebug) console.log(`Clearing pending data from USB device...`);
         let clearedBytes = 0;
         let attempts = 0;
         
@@ -788,27 +784,27 @@ class RadiaCodeUSBTransport extends RadiaCodeTransport {
             while (true) {
                 attempts++;
                 try {
-                    console.log(`Clear attempt ${attempts}: reading pending data...`);
+                    if (this.usbDebug) console.log(`Clear attempt ${attempts}: reading pending data...`);
                     
                     // Use 256 bytes like Python implementation, with 100ms timeout
                     const result = await this.device.transferIn(this.endpointIn, 256);
                     
                     if (result.status !== 'ok') {
-                        console.log(`Clear attempt ${attempts}: USB transfer status not OK (${result.status}), stopping`);
+                        if (this.usbDebug) console.log(`Clear attempt ${attempts}: USB transfer status not OK (${result.status}), stopping`);
                         break;
                     }
                     
                     if (result.data && result.data.byteLength > 0) {
                         clearedBytes += result.data.byteLength;
-                        console.log(`Clear attempt ${attempts}: cleared ${result.data.byteLength} bytes (total: ${clearedBytes})`);
+                        if (this.usbDebug) console.log(`Clear attempt ${attempts}: cleared ${result.data.byteLength} bytes (total: ${clearedBytes})`);
                         // Continue loop - there might be more data
                     } else {
-                        console.log(`Clear attempt ${attempts}: no data received, buffer is empty`);
+                        if (this.usbDebug) console.log(`Clear attempt ${attempts}: no data received, buffer is empty`);
                         break;
                     }
                 } catch (error) {
                     // This is expected when no more data - equivalent to USBTimeoutError in Python
-                    console.log(`Clear attempt ${attempts}: ${error.message} - no more data available`);
+                    if (this.usbDebug) console.log(`Clear attempt ${attempts}: ${error.message} - no more data available`);
                     break;
                 }
             }
@@ -817,9 +813,9 @@ class RadiaCodeUSBTransport extends RadiaCodeTransport {
         }
         
         if (clearedBytes > 0) {
-            console.log(`✅ Cleared ${clearedBytes} bytes of pending data in ${attempts} attempts`);
+            if (this.usbDebug) console.log(`✅ Cleared ${clearedBytes} bytes of pending data in ${attempts} attempts`);
         } else {
-            console.log(`✅ No pending data found (checked in ${attempts} attempts)`);
+            if (this.usbDebug) console.log(`✅ No pending data found (checked in ${attempts} attempts)`);
         }
     }
 

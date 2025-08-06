@@ -38,18 +38,24 @@
           :disabled="!isConnected">
           🔌 Disconnect
         </button>
+        <button 
+          class="connection-button auto-update" 
+          @click="toggleAutoUpdate" 
+          :disabled="!isConnected">
+          Auto-update: {{ autoUpdateEnabled ? "ON" : "OFF" }}
+        </button>
+        <button 
+          class="connection-button alarm-settings" 
+          @click="loadAlarmSettings" 
+          :disabled="!isConnected">
+          Show Alarm Settings
+        </button>
       </div>
       
       <div :class="['status', connectionStatus.toLowerCase()]">
         {{ connectionStatusText }}
+        <span v-if="isConnected && autoUpdateEnabled" style="margin-left: 10px; font-size: 0.9em;">({{ updateInterval/1000 }}s interval)</span>
       </div>
-    </div>
-    
-    <div class="auto-update-controls" v-if="isConnected">
-      <button @click="toggleAutoUpdate" class="connection-button">
-        Auto-update: {{ autoUpdateEnabled ? "ON" : "OFF" }}
-      </button>
-      <span v-if="autoUpdateEnabled">({{ updateInterval/1000 }}s interval)</span>
     </div>
     
     <div class="log-section" v-if="logMessages.length > 0">
@@ -442,7 +448,7 @@ var app = new Vue({
         
         this.log('Getting alarm limits...');
 
-        // this.alarmLimits = await this.device.getAlarmLimits();
+        //this.alarmLimits = await this.device.getAlarmLimits(); 
         // this.log(`Alarm limits: CR L1/L2=${this.alarmLimits.l1_count_rate}/${this.alarmLimits.l2_count_rate} ${this.alarmLimits.count_unit}, DR L1/L2=${this.alarmLimits.l1_dose_rate}/${this.alarmLimits.l2_dose_rate} µ${this.alarmLimits.dose_unit}/h`);
         
         // Test data buffer to see what we get
@@ -559,6 +565,18 @@ var app = new Vue({
       }
       this.countRateTimeSeries = null;
       this.doseRateTimeSeries = null;
+    },
+
+    async loadAlarmSettings() {
+      if (!this.isConnected || !this.device) return;
+      
+      try {
+        this.log('Loading alarm settings...');
+        this.alarmLimits = await this.device.getAlarmLimits();
+        this.log(`✅ Alarm limits loaded: CR L1/L2=${this.alarmLimits.l1_count_rate}/${this.alarmLimits.l2_count_rate} ${this.alarmLimits.count_unit}, DR L1/L2=${this.alarmLimits.l1_dose_rate}/${this.alarmLimits.l2_dose_rate} µ${this.alarmLimits.dose_unit}/h`);
+      } catch (error) {
+        this.log(`❌ Failed to load alarm settings: ${error.message}`);
+      }
     },
 
     async disconnect() {
@@ -756,6 +774,5 @@ var app = new Vue({
   },
 });
 </script>
-<!-- <script src="sound.js"></script> -->
 </body>
 </html>

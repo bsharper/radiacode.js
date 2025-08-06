@@ -72,12 +72,30 @@ body {
 }
 
 .disconnect {
-  background: #6c757d;
+  background: #9ca3af;
   color: white;
 }
 
 .disconnect:hover:not(:disabled) {
-  background: #545b62;
+  background: #6b7280;
+}
+
+.auto-update {
+  background: #10b981;
+  color: white;
+}
+
+.auto-update:hover:not(:disabled) {
+  background: #059669;
+}
+
+.alarm-settings {
+  background: #0f5132;
+  color: white;
+}
+
+.alarm-settings:hover:not(:disabled) {
+  background: #0b3d26;
 }
 
 .status {
@@ -249,15 +267,15 @@ body {
 
 /* Alarm Limits */
 .alarm-limits {
-  background: #fff3cd;
+  background: #ecf6f2;
   padding: 15px;
   border-radius: 8px;
   margin-bottom: 20px;
-  border: 1px solid #ffeaa7;
+  border: 1px solid #bde7d4;
 }
 .alarm-limits h3 {
   margin-top: 0;
-  color: #856404;
+  color: #0f5132;
 }
 .alarm-limits-grid {
   display: grid;
@@ -269,11 +287,11 @@ body {
   background: white;
   padding: 10px;
   border-radius: 5px;
-  border: 1px solid #ffeaa7;
+  border: 1px solid #bde7d4;
 }
 .alarm-item label {
   font-weight: bold;
-  color: #856404;
+  color: #0f5132;
   display: block;
   margin-bottom: 5px;
 }

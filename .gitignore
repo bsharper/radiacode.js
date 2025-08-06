@@ -4,3 +4,4 @@ archive.sh
 old
 out
 *.bak
+d*.txt

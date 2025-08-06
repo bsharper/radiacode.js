@@ -245,10 +245,16 @@ def main():
     print (f"Standalone HTML file created as standalone.html {bytes_string(file_size)}")
     
 if __name__ == "__main__":
+    if not check_terser_exists() and not exists('html-minifier-next'):
+        print ("="*60)
+        print ("WARNING: install terser and html-minifier-next to work properly")
+        print ("> npm install -g terser html-minifier-next")
+        print ("You can still run this script and it will create a standalone.html file, but it won't be compressed.")
+        print ("="*60)
     main()
     diff = (compressed_size/full_size) * 100 if full_size > 0 else 0
     print(f"Total size reduction: {compressed_size} bytes ({humanize_bytes(compressed_size)}) from {full_size} bytes ({humanize_bytes(full_size)})")
     print(f"Compression ratio: {diff:.2f}%")
     final_pass_check('standalone.html')
-    #embed_fonts_in_css('css/fontello.css', 'css/fontello.min.css')
+    
     
