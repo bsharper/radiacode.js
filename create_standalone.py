@@ -197,7 +197,7 @@ def inline_css(html_content: str) -> str:
                 html_before = len(html_content)
                 #html_content = html_content.replace(f'<link rel="stylesheet" href="{css_file}">', style_tag)
                 replace_reg = rf'<link.*rel="stylesheet".*href="{css_file}".*>'
-                html_content = re.sub(replace_reg, lambda _: style_tag, html_content, re.IGNORECASE)
+                html_content = re.sub(replace_reg, lambda _: style_tag, html_content, flags=re.IGNORECASE)
                 html_after = len(html_content)
                 print (f"[+] Replaced {css_file} with inline style tag, size changed from {bytes_string(html_before)} to {bytes_string(html_after)}")
             else:

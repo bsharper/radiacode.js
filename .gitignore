@@ -5,3 +5,4 @@ old
 out
 *.bak
 d*.txt
+.DS_Store
