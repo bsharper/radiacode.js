@@ -1,8 +1,10 @@
-# radiacode-web
+# radiacode.js
 
 A web-based interface for RadiaCode radiation detection devices. Connects via USB or Bluetooth
 
 ![Screenshot example](screenshot.jpg)
+
+> Rename notice: This repository was renamed from "radiacode-web" to "radiacode.js". The library now has shims (usb and webbluetooth) to work in node.js in addition to the browser.
 
 ## About
 
@@ -10,7 +12,7 @@ This project is based on [https://github.com/cdump/radiacode](https://github.com
 
 ## Usage
 
-1. Clone this repo: `git clone https://github.com/bsharper/radiacode-web`
+1. Clone this repo: `git clone https://github.com/bsharper/radiacode.js`
 2. Open `index.html` in a Chrome-based browser (Chrome, Edge, or other Chromium-based browsers)
 3. Click "Connect Bluetooth" to connect to your RadiaCode device
 

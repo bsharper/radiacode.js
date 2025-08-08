@@ -62,7 +62,7 @@ def final_pass_check(filename):
     if exists("html-minifier-next"):
         print("[+] Running final pass with html-minifier-next...", flush=True, end="")
         output_filename = filename.replace('.html', '.min.html')
-        os.system(f"html-minifier-next --collapse-whitespace --remove-comments --minify-css true --minify-js true {filename} -o {output_filename}")
+        os.system(f"npx html-minifier-next --collapse-whitespace --remove-comments --minify-css true --minify-js true {filename} -o {output_filename}")
         before_size = os.path.getsize(filename)
         after_size = os.path.getsize(output_filename)
         print(f"done ({bytes_string(before_size)} -> {bytes_string(after_size)}")
@@ -129,10 +129,36 @@ def bytes_string(n: int) -> str:
     return f"{n} bytes ({humanize_bytes(n)})"
 
 def exists(bin_name: str) -> bool:
-    return shutil.which(bin_name) is not None
+    # First, check the PATH
+    if shutil.which(bin_name) is not None:
+        return True
+
+    # Also check common local Node.js bin folders (project-local installs)
+    # Search upwards from both CWD and this script's directory
+    start_points = {Path.cwd().resolve(), Path(__file__).resolve().parent}
+    candidate_dirs = set()
+    for start in start_points:
+        for p in [start, *start.parents]:
+            for nm in ("node_modules", "node_libraries"):
+                candidate_dirs.add(p / nm / ".bin")
+
+    # Build candidate executable names (Windows extensions if needed)
+    candidates = {bin_name}
+    if os.name == 'nt' and not any(bin_name.lower().endswith(ext) for ext in ('.cmd', '.exe', '.bat')):
+        for ext in ('.cmd', '.exe', '.bat'):
+            candidates.add(bin_name + ext)
+
+    for d in candidate_dirs:
+        if d.is_dir():
+            for name in candidates:
+                exe_path = d / name
+                if exe_path.exists() and os.access(exe_path, os.X_OK):
+                    return True
+
+    return False
 
 def check_terser_exists():
-    return exists('terser') or exists('terser.cmd') or exists('terser.exe')
+    return exists('terser')
 
 def compress_file(filename):
     global full_size, compressed_size
@@ -140,7 +166,7 @@ def compress_file(filename):
         print("Terser is not installed. Please install it to compress files.")
         return False
     output_filename = filename.replace('.js', '.min.js')
-    rv = os.system(f"terser -c -o {output_filename} {filename}")
+    rv = os.system(f"npx terser -c -o {output_filename} {filename}")
     if rv == 0:
         ofs = os.path.getsize(output_filename)
         ifs = os.path.getsize(filename)
@@ -157,7 +183,9 @@ def compress_js(script: str) -> str:
         print("Terser is not installed. Please install it to compress files.")
         return script
     from subprocess import Popen, PIPE
-    proc = Popen(['terser', '-c'], stdin=PIPE, stdout=PIPE, stderr=PIPE, shell=True)
+    # Using shell=True with a list causes the shell to interpret stdin (the JS) as shell script.
+    # Run npx directly with arguments and no shell so terser reads from stdin.
+    proc = Popen(['npx', '--yes', 'terser', '-c'], stdin=PIPE, stdout=PIPE, stderr=PIPE, shell=False)
     stdout, stderr = proc.communicate(script.encode('utf-8'))
     if proc.returncode != 0:
         print(f"Terser error: {stderr.decode('utf-8')}")
@@ -248,7 +276,7 @@ if __name__ == "__main__":
     if not check_terser_exists() and not exists('html-minifier-next'):
         print ("="*60)
         print ("WARNING: install terser and html-minifier-next to work properly")
-        print ("> npm install -g terser html-minifier-next")
+        print ("> npm install terser html-minifier-next")
         print ("You can still run this script and it will create a standalone.html file, but it won't be compressed.")
         print ("="*60)
     main()
@@ -256,5 +284,4 @@ if __name__ == "__main__":
     print(f"Total size reduction: {compressed_size} bytes ({humanize_bytes(compressed_size)}) from {full_size} bytes ({humanize_bytes(full_size)})")
     print(f"Compression ratio: {diff:.2f}%")
     final_pass_check('standalone.html')
-    
-    
+

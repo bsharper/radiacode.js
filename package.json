@@ -1,5 +1,5 @@
 {
-  "name": "radiacode-web",
+  "name": "radiacode.js",
   "version": "1.0.0",
   "description": "radiacode.js library for connecting to RadiaCode devices",
   "main": "radiacode.js",
@@ -22,5 +22,9 @@
     "nodejs"
   ],
   "author": "",
-  "license": "MIT"
+  "license": "MIT",
+  "devDependencies": {
+    "html-minifier-next": "^1.1.5",
+    "terser": "^5.43.1"
+  }
 }
