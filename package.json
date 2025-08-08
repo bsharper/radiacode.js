@@ -1,6 +1,6 @@
 {
   "name": "radiacode.js",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "radiacode.js library for connecting to RadiaCode devices",
   "main": "radiacode.js",
   "scripts": {
@@ -10,6 +10,7 @@
     "blessed": "^0.1.81",
     "blessed-contrib": "^4.11.0",
     "chalk": "^4.1.2",
+    "debug": "^4.4.1",
     "figlet": "^1.8.2",
     "gradient-string": "^1.2.0",
     "usb": "^2.16.0",

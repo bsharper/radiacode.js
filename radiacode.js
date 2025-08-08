@@ -18,6 +18,9 @@
 // COMMON DEFINITIONS AND UTILITIES
 // ============================================================================
 
+// Library version
+const RADIACODE_JS_VERSION = '1.0.1';
+
 // Command types (from Python implementation)
 const COMMAND = {
     GET_STATUS: 0x0005,
@@ -244,6 +247,79 @@ const VSFR_FORMATS = {
 };
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+// ----------------------------------------------------------------------------
+// Debug logging (env-driven)
+// - Uses the `debug` package when available (Node/CommonJS)
+// - Falls back to a simple namespaced console logger in browsers controlled by
+//   localStorage.debug (same convention as `debug`), e.g.:
+//     localStorage.debug = 'radiacode:*'   // enable all radiacode logs
+//     localStorage.debug = 'radiacode:usb' // only USB transport
+// ----------------------------------------------------------------------------
+const createLogger = (() => {
+    let factory = null;
+    // Prefer Node/CommonJS debug if available
+    try {
+        if (typeof module !== 'undefined' && module.exports) {
+            // eslint-disable-next-line global-require
+            const dbg = require('debug');
+            factory = (ns) => dbg(ns);
+        }
+    } catch (_) { /* ignore */ }
+
+    if (!factory) {
+        // Browser fallback: simple namespace matcher using localStorage.debug
+        const getPattern = () => {
+            try {
+                if (typeof localStorage !== 'undefined') {
+                    return localStorage.debug || localStorage.DEBUG || '';
+                }
+            } catch (_) { /* ignore */ }
+            return '';
+        };
+
+        const escapeRe = (s) => s.replace(/[|\\{}()[\]^$+?.]/g, '\\$&');
+        const toRegex = (glob) => new RegExp('^' + escapeRe(glob).replace(/\*/g, '.*?') + '$');
+        const compile = (str) => {
+            const tokens = String(str || '').split(/[\s,]+/).filter(Boolean);
+            const enables = [];
+            const disables = [];
+            for (const t of tokens) {
+                if (t.startsWith('-')) disables.push(toRegex(t.slice(1)));
+                else enables.push(toRegex(t));
+            }
+            return (ns) => {
+                if (disables.some((re) => re.test(ns))) return false;
+                if (enables.length === 0) return false;
+                return enables.some((re) => re.test(ns));
+            };
+        };
+
+        let matcher = compile(getPattern());
+        try {
+            if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+                window.addEventListener('storage', (e) => {
+                    if (!e.key) return;
+                    const k = e.key.toLowerCase();
+                    if (k === 'debug') matcher = compile(getPattern());
+                });
+            }
+        } catch (_) { /* ignore */ }
+
+        factory = (ns) => {
+            const fn = (...args) => {
+                if (!matcher(ns)) return;
+                console.log(`${ns}:`, ...args);
+            };
+            // Expose enabled flag similar to `debug`
+            Object.defineProperty(fn, 'enabled', {
+                get: () => matcher(ns)
+            });
+            return fn;
+        };
+    }
+    return factory;
+})();
 
 // Error classes
 class DeviceNotFound extends Error {
@@ -708,7 +784,9 @@ class RadiaCodeUSBTransport extends RadiaCodeTransport {
         this.interface = null;
         this.serialNumber = serialNumber;
         this.timeoutMs = timeoutMs;
-        this.usbDebug = false;
+    // Deprecated flag retained for backward-compat only; use DEBUG env/localStorage
+    this.usbDebug = false;
+    this.usbLog = createLogger('radiacode:usb');
         // Fixed endpoint numbers matching Python implementation
         this.endpointOut = 1;    // Write endpoint (0x1 in Python)
         this.endpointIn = 1;     // Read endpoint (0x81 in Python, but WebUSB uses just the number)
@@ -747,7 +825,7 @@ class RadiaCodeUSBTransport extends RadiaCodeTransport {
 
             // Log interface configuration for debugging
             const alternate = this.interface.alternates[0];
-            if (this.usbDebug) console.log('Interface configuration:', {
+            this.usbLog('Interface configuration:', {
                 interfaceNumber: this.interface.interfaceNumber,
                 alternateCount: this.interface.alternates.length,
                 endpoints: alternate.endpoints.map(ep => ({
@@ -760,7 +838,7 @@ class RadiaCodeUSBTransport extends RadiaCodeTransport {
             
             this.endpointOut = 1;
             this.endpointIn = 1;
-            if (this.usbDebug) console.log(`🔌 Using fixed endpoints: OUT=${this.endpointOut}, IN=${this.endpointIn}`);
+            this.usbLog(`🔌 Using fixed endpoints: OUT=${this.endpointOut}, IN=${this.endpointIn}`);
 
 
             // HACK: not sure why this isn't needed, but it makes things work if I comment it out
@@ -770,7 +848,7 @@ class RadiaCodeUSBTransport extends RadiaCodeTransport {
             await new Promise(resolve => setTimeout(resolve, 50));
 
             this.isConnected = true;
-            if (this.usbDebug) console.log('RadiaCode USB device connected successfully');
+            this.usbLog('RadiaCode USB device connected successfully');
             return true;
 
         } catch (error) {
@@ -780,7 +858,7 @@ class RadiaCodeUSBTransport extends RadiaCodeTransport {
     }
 
     async clearPendingData() {
-        if (this.usbDebug) console.log(`Clearing pending data from USB device...`);
+    this.usbLog(`Clearing pending data from USB device...`);
         let clearedBytes = 0;
         let attempts = 0;
         
@@ -789,27 +867,27 @@ class RadiaCodeUSBTransport extends RadiaCodeTransport {
             while (true) {
                 attempts++;
                 try {
-                    if (this.usbDebug) console.log(`Clear attempt ${attempts}: reading pending data...`);
+                    this.usbLog(`Clear attempt ${attempts}: reading pending data...`);
                     
                     // Use 256 bytes like Python implementation, with 100ms timeout
                     const result = await this.device.transferIn(this.endpointIn, 256);
                     
                     if (result.status !== 'ok') {
-                        if (this.usbDebug) console.log(`Clear attempt ${attempts}: USB transfer status not OK (${result.status}), stopping`);
+                        this.usbLog(`Clear attempt ${attempts}: USB transfer status not OK (${result.status}), stopping`);
                         break;
                     }
                     
                     if (result.data && result.data.byteLength > 0) {
                         clearedBytes += result.data.byteLength;
-                        if (this.usbDebug) console.log(`Clear attempt ${attempts}: cleared ${result.data.byteLength} bytes (total: ${clearedBytes})`);
+                        this.usbLog(`Clear attempt ${attempts}: cleared ${result.data.byteLength} bytes (total: ${clearedBytes})`);
                         // Continue loop - there might be more data
                     } else {
-                        if (this.usbDebug) console.log(`Clear attempt ${attempts}: no data received, buffer is empty`);
+                        this.usbLog(`Clear attempt ${attempts}: no data received, buffer is empty`);
                         break;
                     }
                 } catch (error) {
                     // This is expected when no more data - equivalent to USBTimeoutError in Python
-                    if (this.usbDebug) console.log(`Clear attempt ${attempts}: ${error.message} - no more data available`);
+                    this.usbLog(`Clear attempt ${attempts}: ${error.message} - no more data available`);
                     break;
                 }
             }
@@ -818,9 +896,9 @@ class RadiaCodeUSBTransport extends RadiaCodeTransport {
         }
         
         if (clearedBytes > 0) {
-            if (this.usbDebug) console.log(`✅ Cleared ${clearedBytes} bytes of pending data in ${attempts} attempts`);
+            this.usbLog(`✅ Cleared ${clearedBytes} bytes of pending data in ${attempts} attempts`);
         } else {
-            if (this.usbDebug) console.log(`✅ No pending data found (checked in ${attempts} attempts)`);
+            this.usbLog(`✅ No pending data found (checked in ${attempts} attempts)`);
         }
     }
 
@@ -829,13 +907,13 @@ class RadiaCodeUSBTransport extends RadiaCodeTransport {
         if (this.isClosing) throw new ConnectionClosed('Connection is closing');
 
         try {
-            if (this.usbDebug) console.log(`Sending ${data.byteLength} bytes to endpoint ${this.endpointOut}:`, Array.from(new Uint8Array(data)).map(b => '0x' + b.toString(16).padStart(2, '0')).join(' '));
+            this.usbLog(`Sending ${data.byteLength} bytes to endpoint ${this.endpointOut}:`, Array.from(new Uint8Array(data)).map(b => '0x' + b.toString(16).padStart(2, '0')).join(' '));
             const result = await this.device.transferOut(this.endpointOut, data);
             
             if (result.status !== 'ok') {
                 throw new Error(`USB transfer failed: ${result.status}`);
             }
-            if (this.usbDebug) console.log(`Successfully sent ${result.bytesWritten} bytes`);
+            this.usbLog(`Successfully sent ${result.bytesWritten} bytes`);
             
             // Add a small delay after sending to ensure device processes the command
             await new Promise(resolve => setTimeout(resolve, 10));
@@ -864,7 +942,7 @@ class RadiaCodeUSBTransport extends RadiaCodeTransport {
             // First, try to read initial data with retries like Python implementation
             while (trials < maxTrials) {
                 try {
-                    if (this.usbDebug) console.log(`Attempting to read from endpoint ${this.endpointIn}, trial ${trials + 1}`);
+                    this.usbLog(`Attempting to read from endpoint ${this.endpointIn}, trial ${trials + 1}`);
                     
                     // Use 256 bytes like Python implementation (this is buffer size, not packet size)
                     const transferPromise = this.device.transferIn(this.endpointIn, 256);
@@ -875,7 +953,7 @@ class RadiaCodeUSBTransport extends RadiaCodeTransport {
                     }
 
                     initialData = new Uint8Array(result.data.buffer);
-                    if (this.usbDebug) console.log(`Received ${initialData.length} bytes on trial ${trials + 1}`);
+                    this.usbLog(`Received ${initialData.length} bytes on trial ${trials + 1}`);
                     
                     if (initialData.length > 0) {
                         break;
@@ -908,13 +986,13 @@ class RadiaCodeUSBTransport extends RadiaCodeTransport {
 
             const dataView = new DataView(initialData.buffer, 0, 4);
             const responseLength = dataView.getUint32(0, true);
-            if (this.usbDebug) console.log(`Expected response length: ${responseLength}`);
+            this.usbLog(`Expected response length: ${responseLength}`);
             
             let responseData = initialData.slice(4);
 
             while (responseData.length < responseLength) {
                 const remainingBytes = responseLength - responseData.length;
-                if (this.usbDebug) console.log(`Reading additional ${remainingBytes} bytes...`);
+                this.usbLog(`Reading additional ${remainingBytes} bytes...`);
                 
                 const readSize = Math.min(remainingBytes, 256);
                 const transferPromise = this.device.transferIn(this.endpointIn, readSize);
@@ -931,7 +1009,7 @@ class RadiaCodeUSBTransport extends RadiaCodeTransport {
                 responseData = combined;
             }
 
-            if (this.usbDebug) console.log(`Successfully received complete response: ${responseData.length} bytes`);
+            this.usbLog(`Successfully received complete response: ${responseData.length} bytes`);
             return new BytesBuffer(responseData);
 
         } catch (error) {
@@ -1138,11 +1216,13 @@ class RadiaCodeDevice {
     constructor(transport) {
         this.transport = transport;
         this.sequenceNumber = 0;
+    // Deprecated flag retained for backward-compat only; use DEBUG env/localStorage
         this.debug = false;
         this.baseTime = new Date();
         this.spectrumFormatVersion = 1;
-        
+        this.log = createLogger('radiacode:device');
         this.commandLookup = {};
+        this.deviceTextMessage = "";
         for (const [key, value] of Object.entries(COMMAND)) {
             this.commandLookup[value] = key;
         }
@@ -1152,9 +1232,9 @@ class RadiaCodeDevice {
      * Execute a command on the device
      */
     async execute(command, args = null, timeout = 10000) {
-        if (this.debug) {
+        {
             const cmdName = this.commandLookup[command] || command;
-            console.log(`Executing command: ${cmdName}, args: ${args ? args.length : 0} bytes`);
+            this.log(`Executing command: ${cmdName}, args: ${args ? args.length : 0} bytes`);
         }
         
         if (!this.transport.connected()) throw new ConnectionClosed('Device not connected');
@@ -1179,9 +1259,7 @@ class RadiaCodeDevice {
         fullRequestView.setUint32(0, requestPayload.length, true);
         new Uint8Array(fullRequest, 4).set(requestPayload);
 
-        if (this.debug) {
-            console.log(`Sending request: command=${command}, seqNo=${reqSeqNo}, argsLength=${argsBytes.length}`);
-        }
+    this.log(`Sending request: command=${command}, seqNo=${reqSeqNo}, argsLength=${argsBytes.length}`);
         
         await this.transport.send(new Uint8Array(fullRequest));
 
@@ -1196,9 +1274,7 @@ class RadiaCodeDevice {
             }
         }
         
-        if (this.debug) {
-            console.log(`Received response: command=${responseHeader[0]}, seqNo=${responseHeader[3]}, length=${response.size()}`);
-        }
+    this.log(`Received response: command=${responseHeader[0]}, seqNo=${responseHeader[3]}, length=${response.size()}`);
         
         if (!headersMatch) {
             const reqHex = Array.from(requestHeaderBytes).map(b => `0x${b.toString(16).padStart(2, '0')}`).join(' ');
@@ -1206,10 +1282,11 @@ class RadiaCodeDevice {
             throw new Error(`Header mismatch. Sent: [${reqHex}], Received: [${resHex}]`);
         }
         
-        if (this.debug) {
+        {
             const cmdName = this.commandLookup[command] || command;
-            console.log(`Command ${cmdName} (${command}) executed successfully, response length: ${response.size()}`);
-            console.log(response);
+            this.log(`Command ${cmdName} (${command}) executed successfully, response length: ${response.size()}`);
+            // Dump response object in verbose mode; debug packages typically include toString
+            this.log(response);
         }
         
         return response;
@@ -1230,7 +1307,7 @@ class RadiaCodeDevice {
      * Initialize the device after connection
      */
     async initialize() {
-        if (this.debug) console.log('Initializing device...');
+        this.log('Initializing device...');
         const exchangeData = new Uint8Array([0x01, 0xff, 0x12, 0xff]);
         await this.execute(COMMAND.SET_EXCHANGE, exchangeData);
         await this.setLocalTime(new Date());
@@ -1247,7 +1324,7 @@ class RadiaCodeDevice {
                 throw new Error(`DEVICE_TIME write failed with retcode ${retcode}`);
             }
             // consume any unexpected trailing bytes (firmware quirk)
-            if (resp.size() !== 0 && this.debug) {
+            if (resp.size() !== 0) {
                 console.warn(`DEVICE_TIME write returned ${resp.size()} extra byte(s), discarding`);
                 while (resp.size() > 0) resp.read(1);
             }
@@ -1256,7 +1333,14 @@ class RadiaCodeDevice {
         }
 
         this.baseTime = new Date(Date.now() + 128000); // Add 128 seconds like Python
-        if (this.debug) console.log('Device initialized successfully');
+        try {
+            this.deviceTextMessage = await this.readVirtualString(VS.DEVICE_TEXT);
+        } catch (e) {
+            // likely means no text message set
+            this.deviceTextMessage = '';
+        }
+        this.log(`Device text message: ${this.deviceTextMessage}`);
+        this.log('Device initialized successfully');
     }
 
     /**
@@ -1354,9 +1438,9 @@ class RadiaCodeDevice {
         if (trailingNull && response.size() === 1) {
             response.read(1); // consume the extra null
         }
-        const decoder = new TextDecoder('ascii');
-        if (this.debug) console.log(`Read virtual string (command ${commandId}):`, stringData);
-        return decoder.decode(stringData);
+    const decoder = new TextDecoder('ascii');
+    this.log(`Read virtual string (command ${commandId}):`, stringData);
+    return decoder.decode(stringData);
     }
 
     /**
@@ -1568,6 +1652,42 @@ class RadiaCodeDevice {
     }
 
     /**
+     * Get battery charge level percentage quickly.
+     * Tries a fast VSFR read first; if unavailable, falls back to RareData via DATA_BUF.
+     * @param {number} timeoutMs How long to wait for RareData fallback
+     * @returns {Promise<number>} charge percent (0..100)
+     */
+    async get_charge_level(timeoutMs = 3000) {
+        // Fast path: some firmware exposes charge level via VSFR.OPT (0x8028) low 16 bits (centi-percent)
+        try {
+            if (VSFR && typeof VSFR.OPT !== 'undefined') {
+                const vals = await this.batchReadVsfrs([VSFR.OPT]);
+                const raw = Array.isArray(vals) ? vals[0] : vals; // uint32
+                const centi = raw & 0xFFFF;
+                if (centi >= 0 && centi <= 10000) {
+                    return centi / 100.0;
+                }
+            }
+        } catch (_) {
+            // Ignore and fall back
+        }
+
+        // Fallback: poll data buffer for a RareData record
+        const start = Date.now();
+        while (Date.now() - start < timeoutMs) {
+            const records = await this.data_buf();
+            for (const rec of records) {
+                if (rec && rec.constructor && rec.constructor.name === 'RareData') {
+                    // rec.charge_level is already percent in JS decoder
+                    if (typeof rec.charge_level === 'number') return rec.charge_level;
+                }
+            }
+            await sleep(150);
+        }
+        throw new Error('Charge level not available');
+    }
+
+    /**
      * Disconnect from the device
      */
     async disconnect() {
@@ -1751,6 +1871,8 @@ if (typeof window !== 'undefined') {
     window.ConnectionClosed = ConnectionClosed;
     window.TimeoutError = TimeoutError;
     window.MultipleUSBReadFailure = MultipleUSBReadFailure;
+    // Expose library version
+    window.RadiaCodeJS_VERSION = RADIACODE_JS_VERSION;
 }
 
 // Node.js export (if needed)
@@ -1773,6 +1895,21 @@ if (typeof module !== 'undefined' && module.exports) {
         DeviceNotFound,
         ConnectionClosed,
         TimeoutError,
-        MultipleUSBReadFailure
+        MultipleUSBReadFailure,
+        VERSION: RADIACODE_JS_VERSION
     };
 }
+
+// Attach version to all public classes as a static property
+// (avoid class field syntax for broader compatibility)
+RadiaCode.VERSION = RADIACODE_JS_VERSION;
+RadiaCodeDevice.VERSION = RADIACODE_JS_VERSION;
+RadiaCodeFactory.VERSION = RADIACODE_JS_VERSION;
+RadiaCodeBluetoothTransport.VERSION = RADIACODE_JS_VERSION;
+RadiaCodeUSBTransport.VERSION = RADIACODE_JS_VERSION;
+RealTimeData.VERSION = RADIACODE_JS_VERSION;
+RawData.VERSION = RADIACODE_JS_VERSION;
+DoseRateDB.VERSION = RADIACODE_JS_VERSION;
+RareData.VERSION = RADIACODE_JS_VERSION;
+Spectrum.VERSION = RADIACODE_JS_VERSION;
+AlarmLimits.VERSION = RADIACODE_JS_VERSION;

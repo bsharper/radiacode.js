@@ -8,3 +8,5 @@ d*.txt
 .DS_Store
 node_modules
 __pycache__
+radiacode
+PhytonUtils

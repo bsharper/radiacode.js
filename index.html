@@ -192,6 +192,24 @@
   </div>
 </div>
 
+<footer style="margin-top: 24px; padding: 12px 16px; color:#666; font-size: 12px; border-top: 1px solid #eee;">
+  RadiaCode.js <span id="lib-version">v?</span>
+  <span style="margin-left:8px; color:#aaa;">— Demo UI</span>
+  <span style="float:right; color:#aaa;">Firmware info appears after connect</span>
+  <div style="clear:both"></div>
+  <script>
+    // Display library version in footer if available
+    (function(){
+      try {
+        var el = document.getElementById('lib-version');
+        var v = (window.RadiaCode && window.RadiaCode.VERSION) || window.RadiaCodeJS_VERSION;
+        if (el && v) el.textContent = 'v' + v;
+      } catch (_) {}
+    })();
+  </script>
+  
+</footer>
+
 <script>
 const common_options = {
   chart: {
@@ -309,7 +327,9 @@ var app = new Vue({
     },
   },
   created() {
-    this.log('RadiaCode Standalone Demo initialized');
+  this.log('RadiaCode Standalone Demo initialized');
+  const v = (window.RadiaCode && window.RadiaCode.VERSION) || window.RadiaCodeJS_VERSION;
+  if (v) this.log(`Library version: v${v}`);
     this.log('Connect to your device using Bluetooth or USB');
   },
   beforeDestroy: function() {
