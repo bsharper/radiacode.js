@@ -243,6 +243,8 @@ const VSFR_FORMATS = {
     [VSFR.SYS_FW_VER_BT]:     'I'  // uint32
 };
 
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
 // Error classes
 class DeviceNotFound extends Error {
     constructor(message) {
@@ -537,7 +539,8 @@ class RadiaCodeBluetoothTransport extends RadiaCodeTransport {
     }
 
     static isSupported() {
-        return 'bluetooth' in navigator;
+        const nav = (typeof navigator !== 'undefined') ? navigator : (typeof globalThis !== 'undefined' ? globalThis.navigator : undefined);
+        return !!(nav && 'bluetooth' in nav);
     }
 
     async connect() {
@@ -582,8 +585,9 @@ class RadiaCodeBluetoothTransport extends RadiaCodeTransport {
     }
 
     handleNotification(event) {
+        //console.log(event);
         const value = new Uint8Array(event.target.value.buffer);
-        
+        //console.log(value);
         if (this.responseSize === 0) {
             if (value.length < 4) {
                 console.error('Invalid response packet: too short');
@@ -711,7 +715,8 @@ class RadiaCodeUSBTransport extends RadiaCodeTransport {
     }
 
     static isSupported() {
-        return 'usb' in navigator;
+        const nav = (typeof navigator !== 'undefined') ? navigator : (typeof globalThis !== 'undefined' ? globalThis.navigator : undefined);
+        return !!(nav && 'usb' in nav);
     }
 
     async connect() {
@@ -742,7 +747,7 @@ class RadiaCodeUSBTransport extends RadiaCodeTransport {
 
             // Log interface configuration for debugging
             const alternate = this.interface.alternates[0];
-            console.log('📋 Interface configuration:', {
+            if (this.usbDebug) console.log('Interface configuration:', {
                 interfaceNumber: this.interface.interfaceNumber,
                 alternateCount: this.interface.alternates.length,
                 endpoints: alternate.endpoints.map(ep => ({
@@ -1224,12 +1229,12 @@ class RadiaCodeDevice {
      * Initialize the device after connection
      */
     async initialize() {
-        console.log('Initializing device...');
+        if (this.debug) console.log('Initializing device...');
         const exchangeData = new Uint8Array([0x01, 0xff, 0x12, 0xff]);
         await this.execute(COMMAND.SET_EXCHANGE, exchangeData);
         await this.setLocalTime(new Date());
         this.baseTime = new Date(Date.now() + 128000); // Add 128 seconds like Python
-        console.log('Device initialized successfully');
+        if (this.debug) console.log('Device initialized successfully');
     }
 
     /**
@@ -1350,12 +1355,29 @@ class RadiaCodeDevice {
     }
 
     /**
-     * Get buffered measurement data from the device (matching Python data_buf())
+     * Get buffered measurement data from the device
      * @returns {Array} Array of RealTimeData, DoseRateDB, RareData, etc.
      */
     async data_buf() {
         const data = await this.readVirtualBinary(VS.DATA_BUF);
         return decodeDataBuffer(data, this.baseTime);
+    }
+
+    /**
+     * Get single real-time data record from the device 
+     * @returns {RealTimeData} RealTimeData
+     */
+    async real_time_data(tries = 10) {
+        let data = await this.data_buf();
+        for (const record of data) {
+          if (record instanceof RealTimeData) 
+            return record;
+        }
+        if (tries > 0) {
+            await sleep(100);
+            return this.real_time_data(tries - 1);
+        }
+        return null;
     }
 
     /**
@@ -1561,6 +1583,7 @@ class RadiaCodeFactory {
  * console.log(`Live time: ${spectrum.duration}s`);
  * console.log(`Total counts: ${spectrum.getTotalCounts()}`);
  */
+
 class RadiaCode extends RadiaCodeDevice {
     constructor(transport = null, bluetoothMac = null, serialNumber = null) {
         // Create transport based on parameters or default to USB
@@ -1610,6 +1633,55 @@ class RadiaCode extends RadiaCodeDevice {
 // ============================================================================
 // EXPORTS AND GLOBAL DECLARATIONS
 // ============================================================================
+
+// Node.js environment shims for Web Bluetooth and WebUSB
+(function initNodeNavigatorShims() {
+    try {
+        const isNode = typeof process !== 'undefined' && !!(process.versions && process.versions.node);
+        if (!isNode) return;
+
+        // Ensure a navigator object exists on globalThis
+        if (typeof globalThis.navigator === 'undefined') {
+            globalThis.navigator = {};
+        }
+        const nav = globalThis.navigator;
+
+        // Try to attach Web Bluetooth from 'webbluetooth' if available
+        if (!('bluetooth' in nav)) {
+            try {
+                if (typeof require === 'function') {
+                    const wb = require('webbluetooth');
+                    const Bluetooth = wb && (wb.Bluetooth || (wb.default && wb.default.Bluetooth));
+                    if (Bluetooth) {
+                        nav.bluetooth = new Bluetooth({ deviceFound: false, ignoreCache: true });
+                    }
+                }
+            } catch (_) { /* ignore if module not installed */ }
+        }
+
+        // Try to attach WebUSB from 'usb' if available
+        if (!('usb' in nav)) {
+            try {
+                if (typeof require === 'function') {
+                    const usb = require('usb');
+                    const webusb = usb && (usb.webusb || (usb.default && usb.default.webusb));
+                    if (webusb) {
+                        nav.usb = webusb;
+                    }
+                }
+            } catch (_) { /* ignore if module not installed */ }
+        }
+    } catch (_) {
+        // Ignore shim failures to keep browser-first behavior
+    }
+})();
+
+// If running under Node and we created globalThis.navigator, make a local alias so references to `navigator` work
+// eslint-disable-next-line no-var
+if (typeof navigator === 'undefined' && typeof globalThis !== 'undefined' && globalThis.navigator) {
+    // eslint-disable-next-line no-var
+    var navigator = globalThis.navigator;
+}
 
 // Make classes available globally in browser environment
 if (typeof window !== 'undefined') {

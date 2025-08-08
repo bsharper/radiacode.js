@@ -23,9 +23,48 @@ There is very simple `create_standalone.py` script that will generate a fully se
 - Chrome-based browser with Web Bluetooth API support
 - RadiaCode device with Bluetooth capability
 
-## Note
+## Node.js usage
 
-USB and Bluetooth are working now.
+- Install deps: `npm install`
+- Run the fancy TUI: `npm run tui`
+- Minimal example (USB preferred, falls back to Bluetooth):
+
+```js
+// file: node_example.js
+const { RadiaCode } = require('./radiacode');
+
+(async () => {
+    try {
+        let device = new RadiaCode();
+        await device.connect();
+        const version = await device.fw_version();
+        const serial = await device.serial_number();
+        console.log(version);
+        console.log(serial);
+        let poll = setInterval(async () => {
+            const r = await device.real_time_data()
+            console.log(r)
+        }, 1000)
+        
+        const cleanup = async () => {
+            clearInterval(poll);
+            try { await device.disconnect(); } catch {}
+            process.exit(0);
+        };
+        process.on('SIGINT', cleanup);
+        process.on('SIGTERM', cleanup);
+  } catch (e) {
+    console.error('Connect failed:', e.message);
+    process.exit(1);
+  }
+})();
+```
+
+Run: `node node_example.js`
+
+Notes:
+- On Node, the library auto-attaches WebUSB/WebBluetooth shims via `usb` and `webbluetooth` packages.
+- On Linux, USB access may require udev permissions for VID 0x0483 / PID 0xF123.
 
 ## License
 
