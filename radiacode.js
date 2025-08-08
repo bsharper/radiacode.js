@@ -1045,6 +1045,7 @@ function decodeDataBuffer(buffer, baseTime) {
                 flags
             );
             window.latestRareData = rd; // Store latest rare data globally
+            console.log(`RareData: dt=${dt}, duration=${duration}, dose=${dose}, temperature=${temperature}, charge_level=${charge_level}, flags=${flags}`);
             ret.push(rd);
         } else {
             // Skip unknown data types
@@ -1233,6 +1234,27 @@ class RadiaCodeDevice {
         const exchangeData = new Uint8Array([0x01, 0xff, 0x12, 0xff]);
         await this.execute(COMMAND.SET_EXCHANGE, exchangeData);
         await this.setLocalTime(new Date());
+
+        // Reset DEVICE_TIME to 0 (matches Python device_time(0)) so timestamps align
+        try {
+            const payload = new ArrayBuffer(8);
+            const view = new DataView(payload);
+            view.setUint32(0, VSFR.DEVICE_TIME, true);
+            view.setUint32(4, 0, true);
+            const resp = await this.execute(COMMAND.WR_VIRT_SFR, new Uint8Array(payload));
+            const retcode = resp.readUint32LE();
+            if (retcode !== 1) {
+                throw new Error(`DEVICE_TIME write failed with retcode ${retcode}`);
+            }
+            // consume any unexpected trailing bytes (firmware quirk)
+            if (resp.size() !== 0 && this.debug) {
+                console.warn(`DEVICE_TIME write returned ${resp.size()} extra byte(s), discarding`);
+                while (resp.size() > 0) resp.read(1);
+            }
+        } catch (e) {
+            console.warn('DEVICE_TIME reset failed:', e?.message || e);
+        }
+
         this.baseTime = new Date(Date.now() + 128000); // Add 128 seconds like Python
         if (this.debug) console.log('Device initialized successfully');
     }
@@ -1318,8 +1340,20 @@ class RadiaCodeDevice {
         if (retcode !== 1) {
             throw new Error(`readVirtualString for command ${commandId} failed with retcode ${retcode}`);
         }
-        
+
+        // Firmware workaround: sometimes there is a trailing 0x00 after payload
+        let trailingNull = false;
+        if (response.size() === flen + 1) {
+            const peekIndex = response.position + flen;
+            if (peekIndex < response.data.length && response.data[peekIndex] === 0x00) {
+                trailingNull = true;
+            }
+        }
+
         const stringData = response.read(flen);
+        if (trailingNull && response.size() === 1) {
+            response.read(1); // consume the extra null
+        }
         const decoder = new TextDecoder('ascii');
         if (this.debug) console.log(`Read virtual string (command ${commandId}):`, stringData);
         return decoder.decode(stringData);
@@ -1340,8 +1374,21 @@ class RadiaCodeDevice {
         if (retcode !== 1) {
             throw new Error(`readVirtualBinary for command ${commandId} failed with retcode ${retcode}`);
         }
-        
-        return response.read(flen);
+
+        // Firmware workaround: sometimes there is a trailing 0x00 after payload
+        let trailingNull = false;
+        if (response.size() === flen + 1) {
+            const peekIndex = response.position + flen;
+            if (peekIndex < response.data.length && response.data[peekIndex] === 0x00) {
+                trailingNull = true;
+            }
+        }
+
+        const dataBytes = response.read(flen);
+        if (trailingNull && response.size() === 1) {
+            response.read(1); // consume the extra null
+        }
+        return dataBytes;
     }
 
     /**
