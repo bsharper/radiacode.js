@@ -1334,7 +1334,7 @@ class RadiaCodeDevice {
 
         this.baseTime = new Date(Date.now() + 128000); // Add 128 seconds like Python
         try {
-            this.deviceTextMessage = await this.readVirtualString(VS.DEVICE_TEXT);
+            this.deviceTextMessage = await this.readVirtualString(VS.TEXT_MESSAGE);
         } catch (e) {
             // likely means no text message set
             this.deviceTextMessage = '';
