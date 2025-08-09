@@ -13,15 +13,6 @@
 <link rel="stylesheet" href="css/fontello.css">
 <link rel="stylesheet" href="css/animation.css">
 <link rel="stylesheet" href="css/main.css">
-<style>
-/* Min/Max pill styling (updated neutral theme) */
-.minmax-pill{display:inline-flex;align-items:stretch;border:1px solid #d0d7de;background:#fff;border-radius:14px;overflow:hidden;font-size:11px;font-weight:500;font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,sans-serif;margin-top:4px;color:#555;}
-.minmax-pill span{padding:2px 8px;display:inline-block;line-height:1.2;white-space:nowrap;}
-.minmax-pill span+span{border-left:1px solid #d0d7de;}
-.minmax-pill .pill-min,.minmax-pill .pill-max{color:#555;background:transparent;}
-.realtime-item .minmax-pill{margin-top:6px;}
-.value .unit-inline{margin-left:6px;font-size:0.65em;font-weight:600;color:#555;letter-spacing:.5px;vertical-align:middle;}
-</style>
 <body>
 <div id="app">
   <!-- Connection Controls -->
@@ -524,11 +515,10 @@ var app = new Vue({
         this.deviceInfo.serialNumber = serial;
         this.log(`Device: ${serial}`);
         
-        this.log('Getting alarm limits...');
-
+        //this.log('Getting alarm limits...');
         //this.alarmLimits = await this.device.getAlarmLimits(); 
         // this.log(`Alarm limits: CR L1/L2=${this.alarmLimits.l1_count_rate}/${this.alarmLimits.l2_count_rate} ${this.alarmLimits.count_unit}, DR L1/L2=${this.alarmLimits.l1_dose_rate}/${this.alarmLimits.l2_dose_rate} µ${this.alarmLimits.dose_unit}/h`);
-        
+
         // Test data buffer to see what we get
         // this.log('Testing initial data buffer...');
         // const testData = await this.device.data_buf();
