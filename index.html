@@ -13,6 +13,15 @@
 <link rel="stylesheet" href="css/fontello.css">
 <link rel="stylesheet" href="css/animation.css">
 <link rel="stylesheet" href="css/main.css">
+<style>
+/* Min/Max pill styling (updated neutral theme) */
+.minmax-pill{display:inline-flex;align-items:stretch;border:1px solid #d0d7de;background:#fff;border-radius:14px;overflow:hidden;font-size:11px;font-weight:500;font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,sans-serif;margin-top:4px;color:#555;}
+.minmax-pill span{padding:2px 8px;display:inline-block;line-height:1.2;white-space:nowrap;}
+.minmax-pill span+span{border-left:1px solid #d0d7de;}
+.minmax-pill .pill-min,.minmax-pill .pill-max{color:#555;background:transparent;}
+.realtime-item .minmax-pill{margin-top:6px;}
+.value .unit-inline{margin-left:6px;font-size:0.65em;font-weight:600;color:#555;letter-spacing:.5px;vertical-align:middle;}
+</style>
 <body>
 <div id="app">
   <!-- Connection Controls -->
@@ -129,17 +138,25 @@
         <div class="label">Count Rate</div>
         <span class="value">
           {{ currentData.countRate.toFixed(2) }}
+          <span class="unit-inline">CPS</span>
           <span class="error">± {{ currentData.countRateError.toFixed(2) }}</span>
         </span>
-        <span class="unit">CPS</span>
+        <div class="minmax-pill">
+          <span class="pill-min">Min {{ stats.countRate.min == null ? '-' : stats.countRate.min.toFixed(2) }}</span>
+          <span class="pill-max">Max {{ stats.countRate.max == null ? '-' : stats.countRate.max.toFixed(2) }}</span>
+        </div>
       </div>
       <div class="realtime-item">
         <div class="label">Dose Rate</div>
         <span class="value">
           {{ currentData.doseRate.toFixed(4) }}
+          <span class="unit-inline">µSv/h</span>
           <span class="error">± {{ currentData.doseRateError.toFixed(4) }}</span>
         </span>
-        <span class="unit">µSv/h</span>
+        <div class="minmax-pill">
+          <span class="pill-min">Min {{ stats.doseRate.min == null ? '-' : stats.doseRate.min.toFixed(4) }}</span>
+          <span class="pill-max">Max {{ stats.doseRate.max == null ? '-' : stats.doseRate.max.toFixed(4) }}</span>
+        </div>
       </div>
     </div>
     <div class="realtime-grid">
@@ -188,6 +205,22 @@
       <span v-if="rates_series.length > 0">
         Data points: {{ rates_series[0]?.data?.length || 0 }}
       </span>
+    </div>
+  </div>
+
+  <!-- Recording / Storage Section -->
+  <div class="storage-section" v-if="isConnected">
+    <h3>Recording</h3>
+    <div>
+      Samples stored: {{ storage.totalSamples }}
+      <span v-if="storage.sizeBytes"> (~{{ (storage.sizeBytes/1024).toFixed(1) }} KB)</span>
+      <span v-if="storage.buffer.length"> | Buffer: {{ storage.buffer.length }}</span>
+      <span v-if="!storage.enabled" style="color:#c00; margin-left:8px;">(Paused)</span>
+    </div>
+    <div style="margin-top:6px; display:flex; gap:8px; flex-wrap:wrap;">
+      <button @click="toggleStorage">{{ storage.enabled ? 'Pause Recording' : 'Resume Recording' }}</button>
+      <button @click="exportStoredSamples" :disabled="!storage.totalSamples">Export JSON</button>
+      <button @click="clearStoredSamples" :disabled="!storage.totalSamples">Clear Stored</button>
     </div>
   </div>
 </div>
@@ -261,7 +294,7 @@ var app = new Vue({
       
       // Auto-update functionality
       autoUpdateEnabled: false,
-      updateInterval: 1000, // 1 second
+      updateInterval: 1000, // 500ms
       updateTimer: null,
       realTimeDataMessages: 0,
       realTimeDataMessagesMax: 5,
@@ -287,6 +320,25 @@ var app = new Vue({
         {name: 'Dose Rate', data: [], yAxisIndex: 1}
       ],
       
+      // Real-time min/max stats
+      stats: {
+        countRate: {min: null, max: null},
+        doseRate: {min: null, max: null},
+      },
+      
+      // Persistent storage for realtime samples
+      storage: {
+        enabled: true,
+        key: 'radiacode_realtime_v1',
+        buffer: [],
+        lastFlush: 0,
+        flushInterval: 10000, // ms
+        maxBufferSize: 100,   // flush when exceeded
+        maxSamples: 200000,   // prune oldest beyond this
+        totalSamples: 0,
+        sizeBytes: 0,
+      },
+      
       ratesChartOptions: {
         ...common_options,
         title: {text: 'CountRate & DoseRate'},
@@ -296,8 +348,8 @@ var app = new Vue({
           {seriesName: 'doserate',  title: {text: 'μSv/h'}, labels: {formatter:(v) => v.toFixed(6) + ' μSv/h'}, opposite: true},
         ],
       },
-    };
-  },
+    }; // end return
+  }, // end data
   watch: {
     spectrum_accum() {
       if (this.isConnected) {
@@ -331,6 +383,8 @@ var app = new Vue({
   const v = (window.RadiaCode && window.RadiaCode.VERSION) || window.RadiaCodeJS_VERSION;
   if (v) this.log(`Library version: v${v}`);
     this.log('Connect to your device using Bluetooth or USB');
+    this.loadStoredSamples();
+    window.addEventListener('beforeunload', this.beforeUnloadHandler);
   },
   beforeDestroy: function() {
     if (this.updateTimer) {
@@ -339,6 +393,8 @@ var app = new Vue({
     if (this.device && this.isConnected) {
       this.device.disconnect();
     }
+    this.flushStorage(true);
+    window.removeEventListener('beforeunload', this.beforeUnloadHandler);
   },
   methods: {
     log(message) {
@@ -390,6 +446,8 @@ var app = new Vue({
       this.logAutoScroll = true; // Reset auto-scroll when clearing
       this.log('Log cleared');
     },
+
+    beforeUnloadHandler() { this.flushStorage(true); },
 
     async connectBluetooth() {
       try {
@@ -472,18 +530,18 @@ var app = new Vue({
         // this.log(`Alarm limits: CR L1/L2=${this.alarmLimits.l1_count_rate}/${this.alarmLimits.l2_count_rate} ${this.alarmLimits.count_unit}, DR L1/L2=${this.alarmLimits.l1_dose_rate}/${this.alarmLimits.l2_dose_rate} µ${this.alarmLimits.dose_unit}/h`);
         
         // Test data buffer to see what we get
-        this.log('Testing initial data buffer...');
-        const testData = await this.device.data_buf();
-        this.log(`Got ${testData.length} records from data buffer`);
+        // this.log('Testing initial data buffer...');
+        // const testData = await this.device.data_buf();
+        // this.log(`Got ${testData.length} records from data buffer`);
         
-        for (let i = 0; i < Math.min(3, testData.length); i++) {
-          const record = testData[i];
-          if (record instanceof RealTimeData) {
-            this.log(`Sample data[${i}]: CR=${record.count_rate}, DR=${record.dose_rate}, CR_err=${record.count_rate_err}, DR_err=${record.dose_rate_err}`);
-          } else {
-            this.log(`Sample data[${i}]: ${record.constructor.name}`);
-          }
-        }
+        // for (let i = 0; i < Math.min(3, testData.length); i++) {
+        //   const record = testData[i];
+        //   if (record instanceof RealTimeData) {
+        //     this.log(`Sample data[${i}]: CR=${record.count_rate}, DR=${record.dose_rate}, CR_err=${record.count_rate_err}, DR_err=${record.dose_rate_err}`);
+        //   } else {
+        //     this.log(`Sample data[${i}]: ${record.constructor.name}`);
+        //   }
+        // }
         
         // Get initial spectrum
         this.log('Getting initial spectrum...');
@@ -567,8 +625,8 @@ var app = new Vue({
         const doseCanvas = document.getElementById('doseRateChart');
         
         if (countCanvas && doseCanvas) {
-          this.countRateChart.streamTo(countCanvas, 1500);
-          this.doseRateChart.streamTo(doseCanvas, 1500);
+          this.countRateChart.streamTo(countCanvas, this.updateInterval+500);
+          this.doseRateChart.streamTo(doseCanvas, this.updateInterval+500);
           this.log('✅ Real-time charts initialized');
         }
       });
@@ -606,7 +664,7 @@ var app = new Vue({
           this.updateTimer = null;
           this.autoUpdateEnabled = false;
         }
-        
+        this.flushStorage(true);
         if (this.device) {
           await this.device.disconnect();
           this.log('✅ Disconnected successfully');
@@ -641,6 +699,8 @@ var app = new Vue({
         };
         window.currentData = this.currentData;  
         
+        this.resetStats();
+        
       } catch (error) {
         this.log(`❌ Disconnect failed: ${error.message}`);
       }
@@ -661,17 +721,16 @@ var app = new Vue({
         this.updateTimer = setInterval(() => {
           this.updateRatesData();
         }, this.updateInterval);
+        this.storage.lastFlush = Date.now();
         this.log(`Auto-update started (${this.updateInterval/1000}s interval)`);
       }
     },
 
     async updateRatesData() {
       if (!this.isConnected || !this.device) return;
-      
       try {
         const data = await this.device.data_buf();
         const now = new Date().getTime();
-        window.data = data;
         // Process real-time data
         for (const record of data) {
           if (record instanceof RealTimeData) {
@@ -716,6 +775,13 @@ var app = new Vue({
             
             // Trigger chart update
             this.rates_series = [...this.rates_series];
+            
+            // ----- Min/Max update helper -----
+            this.updateStats(record.count_rate, record.dose_rate);
+            
+            // ----- Storage (recording) helpers -----
+            this.storeSample(now, record.count_rate, record.dose_rate);
+            
             break; // Only process the first real-time record
           }
         }
@@ -785,11 +851,103 @@ var app = new Vue({
       }
     },
 
+    // ----- Min/Max update helper -----
+    updateStats(cr, dr) {
+      if (cr != null) {
+        if (this.stats.countRate.min === null || cr < this.stats.countRate.min) this.stats.countRate.min = cr;
+        if (this.stats.countRate.max === null || cr > this.stats.countRate.max) this.stats.countRate.max = cr;
+      }
+      if (dr != null) {
+        if (this.stats.doseRate.min === null || dr < this.stats.doseRate.min) this.stats.doseRate.min = dr;
+        if (this.stats.doseRate.max === null || dr > this.stats.doseRate.max) this.stats.doseRate.max = dr;
+      }
+    },
+    resetStats() {
+      this.stats.countRate.min = this.stats.countRate.max = null;
+      this.stats.doseRate.min = this.stats.doseRate.max = null;
+    },
+    // ----- Storage (recording) helpers -----
+    loadStoredSamples() {
+      try {
+        const raw = localStorage.getItem(this.storage.key);
+        if (raw) {
+          const obj = JSON.parse(raw);
+          if (obj && Array.isArray(obj.samples)) {
+            this.storage.totalSamples = obj.samples.length;
+            this.storage.sizeBytes = raw.length;
+          }
+        }
+      } catch (e) {
+        this.log('⚠️ Failed to load stored samples: ' + e.message);
+      }
+    },
+    getStoredObject() {
+      try {
+        const raw = localStorage.getItem(this.storage.key);
+        if (raw) return JSON.parse(raw);
+      } catch(_) {}
+      return {version:1, samples:[]};
+    },
+    storeSample(ts, cr, dr) {
+      if (!this.storage.enabled) return;
+      this.storage.buffer.push([ts, Number(cr), Number(dr)]);
+      const now = Date.now();
+      if (this.storage.buffer.length >= this.storage.maxBufferSize || (now - this.storage.lastFlush) >= this.storage.flushInterval) {
+        this.flushStorage();
+      }
+    },
+    flushStorage(force) {
+      if (!force && (!this.storage.buffer.length)) return;
+      try {
+        const obj = this.getStoredObject();
+        // Append and prune if needed
+        for (const row of this.storage.buffer) obj.samples.push(row);
+        if (obj.samples.length > this.storage.maxSamples) {
+          const remove = obj.samples.length - this.storage.maxSamples;
+            obj.samples.splice(0, remove);
+        }
+        const raw = JSON.stringify(obj);
+        localStorage.setItem(this.storage.key, raw);
+        this.storage.totalSamples = obj.samples.length;
+        this.storage.sizeBytes = raw.length;
+        this.storage.buffer = [];
+        this.storage.lastFlush = Date.now();
+      } catch (e) {
+        this.log('❌ Failed to flush storage: ' + e.message);
+      }
+    },
+    toggleStorage() {
+      this.storage.enabled = !this.storage.enabled;
+      if (!this.storage.enabled) this.flushStorage(true);
+      this.log(this.storage.enabled ? 'Recording resumed' : 'Recording paused');
+    },
+    clearStoredSamples() {
+      try {
+        localStorage.removeItem(this.storage.key);
+        this.storage.totalSamples = 0;
+        this.storage.sizeBytes = 0;
+        this.storage.buffer = [];
+        this.log('Stored samples cleared');
+      } catch(e) { this.log('❌ Clear failed: ' + e.message); }
+    },
+    exportStoredSamples() {
+      try {
+        this.flushStorage(true);
+        const obj = this.getStoredObject();
+        const blob = new Blob([JSON.stringify(obj)], {type:'application/json'});
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'radiacode_realtime_' + new Date().toISOString().replace(/[:.]/g,'-') + '.json';
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(()=>URL.revokeObjectURL(a.href), 1000);
+        this.log('Exported stored samples');
+      } catch(e) { this.log('❌ Export failed: ' + e.message); }
+    },
     clearRatesData() {
       this.rates_series[0].data = [];
       this.rates_series[1].data = [];
       this.rates_series = [...this.rates_series];
-      this.log('Rates data cleared');
+      this.resetStats();
     }
   },
 });

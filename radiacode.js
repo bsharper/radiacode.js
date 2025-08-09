@@ -149,6 +149,25 @@ const VSFR = {
     SYS_FW_VER_BT:     0xFFFF010
 };
 
+// Control flags used for sound/vibration controllers (mirrors Python CTRL enum)
+const CTRL = {
+    BUTTONS: 1 << 0,
+    CLICKS: 1 << 1,
+    DOSE_RATE_ALARM_1: 1 << 2,
+    DOSE_RATE_ALARM_2: 1 << 3,
+    DOSE_RATE_OUT_OF_SCALE: 1 << 4,
+    DOSE_ALARM_1: 1 << 5,
+    DOSE_ALARM_2: 1 << 6,
+    DOSE_OUT_OF_SCALE: 1 << 7
+};
+
+// Display direction enum (mirrors Python DisplayDirection)
+const DisplayDirection = {
+    AUTO: 0,
+    RIGHT: 1,
+    LEFT: 2
+};
+
 // VSFR data format specifications (format string for data type)
 const VSFR_FORMATS = {
     [VSFR.DEVICE_CTRL]:       'I', // uint32
@@ -1494,23 +1513,7 @@ class RadiaCodeDevice {
         return decodeDataBuffer(data, this.baseTime);
     }
 
-    /**
-     * Get single real-time data record from the device 
-     * @returns {RealTimeData} RealTimeData
-     */
-    async real_time_data(tries = 10) {
-        let data = await this.data_buf();
-        for (const record of data) {
-          if (record instanceof RealTimeData) 
-            return record;
-        }
-        if (tries > 0) {
-            await sleep(100);
-            return this.real_time_data(tries - 1);
-        }
-        return null;
-    }
-
+    
     /**
      * Get current spectrum data from the device (matching Python spectrum())
      * @returns {Spectrum} Spectrum object with duration, calibration, and counts
@@ -1651,42 +1654,157 @@ class RadiaCodeDevice {
         }
     }
 
-    /**
-     * Get battery charge level percentage quickly.
-     * Tries a fast VSFR read first; if unavailable, falls back to RareData via DATA_BUF.
-     * @param {number} timeoutMs How long to wait for RareData fallback
-     * @returns {Promise<number>} charge percent (0..100)
-     */
-    async get_charge_level(timeoutMs = 3000) {
-        // Fast path: some firmware exposes charge level via VSFR.OPT (0x8028) low 16 bits (centi-percent)
-        try {
-            if (VSFR && typeof VSFR.OPT !== 'undefined') {
-                const vals = await this.batchReadVsfrs([VSFR.OPT]);
-                const raw = Array.isArray(vals) ? vals[0] : vals; // uint32
-                const centi = raw & 0xFFFF;
-                if (centi >= 0 && centi <= 10000) {
-                    return centi / 100.0;
-                }
-            }
-        } catch (_) {
-            // Ignore and fall back
+    // ---------------------------------------------------------------------
+    // Generic VSFR write helpers
+    // ---------------------------------------------------------------------
+    async writeVSFR(vsfrId, value, includeValue = true) {
+        // Build payload: <uint32 vsfrId> [<uint32 value>]
+        const size = includeValue ? 8 : 4;
+        const buf = new ArrayBuffer(size);
+        const view = new DataView(buf);
+        view.setUint32(0, vsfrId >>> 0, true);
+        if (includeValue) view.setUint32(4, (value >>> 0), true);
+        const resp = await this.execute(COMMAND.WR_VIRT_SFR, new Uint8Array(buf));
+        const retcode = resp.readUint32LE();
+        if (retcode !== 1) throw new Error(`writeVSFR(${vsfrId.toString(16)}) failed retcode=${retcode}`);
+        if (resp.size() !== 0) {
+            // consume any trailing bytes (firmware quirk)
+            while (resp.size() > 0) resp.read(1);
         }
-
-        // Fallback: poll data buffer for a RareData record
-        const start = Date.now();
-        while (Date.now() - start < timeoutMs) {
-            const records = await this.data_buf();
-            for (const rec of records) {
-                if (rec && rec.constructor && rec.constructor.name === 'RareData') {
-                    // rec.charge_level is already percent in JS decoder
-                    if (typeof rec.charge_level === 'number') return rec.charge_level;
-                }
-            }
-            await sleep(150);
-        }
-        throw new Error('Charge level not available');
+        return true;
     }
 
+    async writeVSFRBatch(vsfrIds, values) {
+        if (vsfrIds.length !== values.length) throw new Error('VSFR id/value length mismatch');
+        const n = vsfrIds.length;
+        if (n === 0) throw new Error('No VSFRs specified');
+        const payload = new ArrayBuffer(4 + n * 4 + n * 4);
+        const view = new DataView(payload);
+        view.setUint32(0, n, true);
+        for (let i = 0; i < n; i++) view.setUint32(4 + i * 4, vsfrIds[i] >>> 0, true);
+        for (let i = 0; i < n; i++) view.setUint32(4 + n * 4 + i * 4, values[i] >>> 0, true);
+        const resp = await this.execute(COMMAND.WR_VIRT_SFR_BATCH, new Uint8Array(payload));
+        const flags = resp.readUint32LE();
+        const expected = (1 << n) - 1;
+        return flags === expected;
+    }
+
+    // ---------------------------------------------------------------------
+    // Setters mirroring Python API (radiacode.py)
+    // ---------------------------------------------------------------------
+
+    async dose_reset() {
+        // No value (like Python write_request without data)
+        return this.writeVSFR(VSFR.DOSE_RESET, 0, false);
+    }
+
+    async set_energy_calib(coef) {
+        if (!Array.isArray(coef) || coef.length !== 3) throw new Error('coef must be array length 3');
+        const payload = new ArrayBuffer(12);
+        const view = new DataView(payload);
+        for (let i = 0; i < 3; i++) view.setFloat32(i * 4, coef[i], true);
+        const args = new ArrayBuffer(8 + 12);
+        const aview = new DataView(args);
+        aview.setUint32(0, VS.ENERGY_CALIB, true);
+        aview.setUint32(4, 12, true);
+        new Uint8Array(args, 8).set(new Uint8Array(payload));
+        const resp = await this.execute(COMMAND.WR_VIRT_STRING, new Uint8Array(args));
+        const retcode = resp.readUint32LE();
+        if (retcode !== 1) throw new Error(`set_energy_calib failed retcode=${retcode}`);
+        return true;
+    }
+
+    async set_language(lang = 'ru') {
+        if (!['ru', 'en'].includes(lang)) throw new Error('unsupported lang value - use "ru" or "en"');
+        return this.writeVSFR(VSFR.DEVICE_LANG, lang === 'en' ? 1 : 0);
+    }
+
+    async set_device_on(on) { return this.writeVSFR(VSFR.DEVICE_ON, on ? 1 : 0); }
+    async set_sound_on(on) { return this.writeVSFR(VSFR.SOUND_ON, on ? 1 : 0); }
+    async set_vibro_on(on) { return this.writeVSFR(VSFR.VIBRO_ON, on ? 1 : 0); }
+
+    async set_sound_ctrl(ctrls) {
+        if (!Array.isArray(ctrls)) throw new Error('ctrls must be an array');
+        let flags = 0;
+        for (const c of ctrls) flags |= c;
+        return this.writeVSFR(VSFR.SOUND_CTRL, flags);
+    }
+
+    async set_vibro_ctrl(ctrls) {
+        if (!Array.isArray(ctrls)) throw new Error('ctrls must be an array');
+        let flags = 0;
+        for (const c of ctrls) {
+            if (c === CTRL.CLICKS) throw new Error('CTRL.CLICKS not supported for vibro');
+            flags |= c;
+        }
+        return this.writeVSFR(VSFR.VIBRO_CTRL, flags);
+    }
+
+    async set_display_off_time(seconds) {
+        if (![5,10,15,30].includes(seconds)) throw new Error('seconds must be one of 5,10,15,30');
+        const v = seconds === 30 ? 3 : (seconds / 5) - 1; // as per Python implementation
+        return this.writeVSFR(VSFR.DISP_OFF_TIME, v);
+    }
+
+    async set_display_brightness(brightness) {
+        if (!(brightness >= 0 && brightness <= 9)) throw new Error('brightness must be 0..9');
+        return this.writeVSFR(VSFR.DISP_BRT, brightness);
+    }
+
+    async set_display_direction(direction) {
+        // Accept either enum constant or raw number
+        if (typeof direction !== 'number' || direction < 0 || direction > 2) throw new Error('direction must be 0 (AUTO), 1 (RIGHT), or 2 (LEFT)');
+        return this.writeVSFR(VSFR.DISP_DIR, direction);
+    }
+
+    async set_alarm_limits({
+        l1_count_rate = null,
+        l2_count_rate = null,
+        l1_dose_rate = null,
+        l2_dose_rate = null,
+        l1_dose = null,
+        l2_dose = null,
+        dose_unit_sv = null,
+        count_unit_cpm = null
+    } = {}) {
+        const which = [];
+        const values = [];
+        const doseMultiplier = dose_unit_sv === true ? 100 : 1;
+        const countMultiplier = (typeof count_unit_cpm === 'boolean') ? (count_unit_cpm ? (1/6) : 10) : 1;
+
+        const add = (cond, id, val) => { if (cond) { which.push(id); values.push(val >>> 0); } };
+
+        if (l1_count_rate != null) {
+            if (l1_count_rate < 0) throw new Error('bad l1_count_rate');
+            add(true, VSFR.CR_LEV1_cp10s, Math.round(l1_count_rate * countMultiplier));
+        }
+        if (l2_count_rate != null) {
+            if (l2_count_rate < 0) throw new Error('bad l2_count_rate');
+            add(true, VSFR.CR_LEV2_cp10s, Math.round(l2_count_rate * countMultiplier));
+        }
+        if (l1_dose_rate != null) {
+            if (l1_dose_rate < 0) throw new Error('bad l1_dose_rate');
+            add(true, VSFR.DR_LEV1_uR_h, Math.round(l1_dose_rate * doseMultiplier));
+        }
+        if (l2_dose_rate != null) {
+            if (l2_dose_rate < 0) throw new Error('bad l2_dose_rate');
+            add(true, VSFR.DR_LEV2_uR_h, Math.round(l2_dose_rate * doseMultiplier));
+        }
+        if (l1_dose != null) {
+            if (l1_dose < 0) throw new Error('bad l1_dose');
+            // Python divides by 1e6 when reading; when setting we expect l1_dose as micro-unit? keep parity with Python set logic (uses same multiplier)
+            add(true, VSFR.DS_LEV1_uR, Math.round(l1_dose * doseMultiplier));
+        }
+        if (l2_dose != null) {
+            if (l2_dose < 0) throw new Error('bad l2_dose');
+            add(true, VSFR.DS_LEV2_uR, Math.round(l2_dose * doseMultiplier));
+        }
+        if (typeof dose_unit_sv === 'boolean') add(true, VSFR.DS_UNITS, dose_unit_sv ? 1 : 0);
+        if (typeof count_unit_cpm === 'boolean') add(true, VSFR.CR_UNITS, count_unit_cpm ? 1 : 0);
+
+        if (which.length === 0) throw new Error('No limits specified');
+        return this.writeVSFRBatch(which, values);
+    }
     /**
      * Disconnect from the device
      */
@@ -1867,6 +1985,8 @@ if (typeof window !== 'undefined') {
     window.COMMAND = COMMAND;
     window.VS = VS;
     window.VSFR = VSFR;
+    window.CTRL = CTRL;
+    window.DisplayDirection = DisplayDirection;
     window.DeviceNotFound = DeviceNotFound;
     window.ConnectionClosed = ConnectionClosed;
     window.TimeoutError = TimeoutError;
@@ -1892,6 +2012,8 @@ if (typeof module !== 'undefined' && module.exports) {
         COMMAND,
         VS,
         VSFR,
+    CTRL,
+    DisplayDirection,
         DeviceNotFound,
         ConnectionClosed,
         TimeoutError,
