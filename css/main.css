@@ -82,14 +82,32 @@ body {
   flex-wrap: wrap;
 }
 
-.connection-button {
+/* Base button style (monochrome) */
+.connection-button, .device-control-buttons .device-button {
   margin: 0;
-  padding: 10px 20px;
+  padding: 10px 14px;
   font-size: 16px;
-  border: none;
-  border-radius: 5px;
+  border: 1px solid #d0d7de;
+  background: #ffffff;
+  color: #24292f;
+  border-radius: 6px;
   cursor: pointer;
-  transition: background-color 0.3s;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  line-height: 1;
+  transition: background .15s, border-color .15s, color .15s;
+}
+.connection-button:hover:not(:disabled), .device-control-buttons .device-button:hover:not(:disabled) {
+  background:#f3f4f6;
+}
+.connection-button:active:not(:disabled), .device-control-buttons .device-button:active:not(:disabled) {
+  background:#e5e7eb;
+}
+.connection-button:focus-visible, .device-control-buttons .device-button:focus-visible {
+  outline:2px solid #2563eb;
+  outline-offset:2px;
 }
 
 .connection-button:disabled {
@@ -97,50 +115,47 @@ body {
   cursor: not-allowed;
 }
 
-.connect-bluetooth {
-  background: #007bff;
-  color: white;
+/* Subtle variants */
+.disconnect { background:#f9fafb; }
+.disconnect:hover:not(:disabled){ background:#f3f4f6; }
+
+/* Device controls grouping */
+.device-controls { background:#f5f7fa; padding:15px; border-radius:8px; margin-bottom:20px; border:1px solid #d0d7de; }
+.device-controls h3 { margin-top:0; color:#0f5132; }
+.device-control-buttons { display:flex; flex-wrap:wrap; gap:8px; }
+.device-control-buttons .device-button { font-size:12px; padding:6px 10px; }
+.device-control-buttons .device-button:disabled { opacity:.55; cursor:not-allowed; }
+
+/* Combined panel layout */
+.device-panel { display:flex; flex-wrap:wrap; gap:16px; align-items:stretch; }
+.device-panel .device-controls { flex: 2 1 360px; margin-bottom:0; }
+.device-panel .device-info { flex: 3 1 420px; margin:0; }
+
+@media (max-width: 900px) {
+  .device-panel { flex-direction:column; }
+  .device-panel .device-controls, .device-panel .device-info { flex:1 1 auto; }
 }
 
-.connect-bluetooth:hover:not(:disabled) {
-  background: #0056b3;
-}
+/* Confirmation Modal */
+.confirm-backdrop { position:fixed; inset:0; background:rgba(15,23,42,0.45); display:flex; align-items:center; justify-content:center; z-index:1000; backdrop-filter:blur(2px); }
+.confirm-modal { background:#fff; border-radius:14px; width: min(420px, 90%); box-shadow:0 4px 24px -4px rgba(0,0,0,0.2), 0 0 0 1px rgba(0,0,0,0.06); font-family:inherit; overflow:hidden; animation:fadeScale .18s ease; }
+.confirm-header { display:flex; align-items:center; justify-content:space-between; padding:14px 18px 10px; }
+.confirm-title { font-size:16px; font-weight:600; color:#1e293b; }
+.confirm-close { background:transparent; border:0; font-size:20px; line-height:1; cursor:pointer; color:#64748b; padding:4px; border-radius:6px; }
+.confirm-close:hover { background:#f1f5f9; color:#0f172a; }
+.confirm-body { display:flex; gap:12px; padding:4px 18px 4px 18px; align-items:flex-start; }
+.confirm-icon { font-size:28px; line-height:1; margin-top:2px; }
+.confirm-message { font-size:14px; color:#334155; line-height:1.4; }
+.confirm-actions { display:flex; justify-content:flex-end; gap:10px; padding:14px 18px 18px; }
+.confirm-cancel, .confirm-ok { font:inherit; font-size:14px; padding:8px 16px; border-radius:8px; cursor:pointer; line-height:1.1; border:1px solid transparent; }
+.confirm-cancel { background:#f1f5f9; color:#334155; border-color:#e2e8f0; }
+.confirm-cancel:hover { background:#e2e8f0; }
+.confirm-ok { background:#111827; color:#fff; }
+.confirm-ok:hover { background:#000; }
+@keyframes fadeScale { from { opacity:0; transform:translateY(6px) scale(.97); } to { opacity:1; transform:translateY(0) scale(1); } }
 
-.connect-usb {
-  background: #007bff;
-  color: white;
-}
-
-.connect-usb:hover:not(:disabled) {
-  background: #0056b3;
-}
-
-.disconnect {
-  background: #9ca3af;
-  color: white;
-}
-
-.disconnect:hover:not(:disabled) {
-  background: #6b7280;
-}
-
-.auto-update {
-  background: #10b981;
-  color: white;
-}
-
-.auto-update:hover:not(:disabled) {
-  background: #059669;
-}
-
-.alarm-settings {
-  background: #0f5132;
-  color: white;
-}
-
-.alarm-settings:hover:not(:disabled) {
-  background: #0b3d26;
-}
+/* Accessible screen-reader only text */
+.sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); border:0; }
 
 .status {
   padding: 10px 15px;
