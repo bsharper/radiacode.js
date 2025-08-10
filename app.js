@@ -86,6 +86,8 @@ var app = new Vue({
         {name: 'Count Rate', data: [], yAxisIndex: 0},
         {name: 'Dose Rate', data: [], yAxisIndex: 1}
       ],
+  // How many historical stored samples (if any) to preload into the CR/DR chart on connect
+  historicalLoadCount: 100,
       
       // Real-time min/max stats
       stats: {
@@ -340,12 +342,15 @@ var app = new Vue({
   // Load sound status
   await this.loadSoundStatus();
         
-        // Start auto-update by default
-        this.toggleAutoUpdate();
-        
-        // Initialize smoothie chart
-        this.initializeSmoothieChart();
-        
+  // Initialize smoothie chart first (so we can optionally backfill it)
+  this.initializeSmoothieChart();
+
+  // Preload historical stored samples (if any) into rates chart before starting auto-update
+  await this.loadHistoricalRates();
+
+  // Start auto-update by default (after historical data is in place)
+  this.toggleAutoUpdate();
+
         this.log('✅ Device initialization completed successfully');
         
       } catch (error) {
@@ -436,6 +441,49 @@ var app = new Vue({
       }
       this.countRateTimeSeries = null;
       this.doseRateTimeSeries = null;
+    },
+
+    async loadHistoricalRates() {
+      try {
+        if (!this.storage.enabled) return; // recording disabled; nothing to show
+        const limit = this.historicalLoadCount;
+        let rows = [];
+        if (this.storage.usingIndexedDB && this.storage.db) {
+          // Read all (simple) then slice; for moderate counts this is fine. Could be optimized later.
+          const tx = this.storage.db.transaction(this.storage.storeName, 'readonly');
+            const store = tx.objectStore(this.storage.storeName);
+            rows = await new Promise(resolve => {
+              const acc = [];
+              store.openCursor().onsuccess = (e) => {
+                const c = e.target.result; if (c) { acc.push(c.value); c.continue(); } else resolve(acc); };
+            });
+        } else {
+          // Fallback localStorage format
+          const obj = this.getStoredObject();
+          if (Array.isArray(obj.samples)) {
+            rows = obj.samples.map(a => ({ts:a[0], cr:a[1], dr:a[2], crErr:a[3], drErr:a[4], flags:a[5]}));
+          }
+        }
+        if (!rows.length) { this.log('No historical samples to preload'); return; }
+        const subset = rows.slice(-limit);
+        // Populate rates_series
+        this.rates_series[0].data = subset.map(r => [r.ts, r.cr]);
+        this.rates_series[1].data = subset.map(r => [r.ts, r.dr]);
+        // Update stats from historical data
+        this.resetStats();
+        for (const r of subset) this.updateStats(r.cr, r.dr);
+        this.rates_series = [...this.rates_series]; // trigger reactive update
+        // Optionally backfill smoothie charts so visual continuity exists (will just paint past window)
+        if (this.countRateTimeSeries && this.doseRateTimeSeries) {
+          for (const r of subset) {
+            this.countRateTimeSeries.append(r.ts, r.cr);
+            this.doseRateTimeSeries.append(r.ts, r.dr);
+          }
+        }
+        this.log(`Preloaded ${subset.length} historical samples into rates chart`);
+      } catch (e) {
+        this.log('⚠️ Failed to load historical samples: ' + e.message);
+      }
     },
 
     async loadAlarmSettings() {

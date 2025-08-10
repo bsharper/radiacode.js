@@ -57,6 +57,48 @@ class _ScriptExtractor(HTMLParser):
         if self._collect and not self._has_src:
             self._buffer.append(f"&#{name};")
 
+def embed_favicon(html: str, base_path: str = ".") -> str:
+    """
+    Replaces the .ico favicon link in the HTML with a Base64 data URI.
+    
+    :param html: The HTML string containing <link> tags.
+    :param base_path: Base path to resolve relative favicon file paths.
+    :return: Updated HTML with embedded Base64 favicon.
+    """
+    # Regex to find the first .ico href in a <link> tag
+    ico_pattern = re.compile(r'href="([^"]+\.ico)"', re.IGNORECASE)
+    match = ico_pattern.search(html)
+    print (f"[+] Searching for favicon.ico in HTML: {match.group(1) if match else 'not found'}")
+    if not match:
+        raise ValueError("No .ico file found in HTML.")
+    
+    ico_path = Path(base_path) / match.group(1)
+    
+    if not ico_path.exists():
+        raise FileNotFoundError(f"Favicon file not found: {ico_path}")
+    
+    # Read and encode
+    with open(ico_path, "rb") as f:
+        b64_data = base64.b64encode(f.read()).decode("ascii")
+    
+    # Replace href value with data URI
+    data_uri = f'data:image/x-icon;base64,{b64_data}'
+    updated_html = ico_pattern.sub(f'href="{data_uri}"', html)
+    
+    return updated_html
+
+def remove_other_favicons(html: str) -> str:
+    """
+    Removes all favicon links except the one with .ico extension.
+    
+    :param html: The HTML string containing <link> tags.
+    :return: Updated HTML with only the .ico favicon link.
+    """
+    lns = html.split('\n')
+    pattern = re.compile(r'\s*<link\s+rel="(?:icon"\s+type="image/png|apple-touch-icon)', flags=re.IGNORECASE)
+    lns = [ln for ln in lns if not pattern.search(ln)]
+    return '\n'.join(lns)
+    
 
 def final_pass_check(filename):
     if exists("html-minifier-next"):
@@ -235,6 +277,8 @@ def inline_css(html_content: str) -> str:
 def main():
     global full_size, compressed_size
     txt = open('index.html', 'r', encoding='utf-8').read()
+    txt = embed_favicon(txt, base_path='.')
+    txt = remove_other_favicons(txt)
     txt = compress_inline_js(txt)
     txt = inline_css(txt)
     lns = txt.split('\n')
