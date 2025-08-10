@@ -52,6 +52,13 @@ var app = new Vue({
       doseRateChart: null,
       countRateTimeSeries: null,
       doseRateTimeSeries: null,
+  // Bracket (±25%) helper series
+  countRateUpperTimeSeries: null,
+  countRateLowerTimeSeries: null,
+  doseRateUpperTimeSeries: null,
+  doseRateLowerTimeSeries: null,
+  showCountErrorRange: false,
+  showDoseErrorRange: false,
       // Auto-update functionality
       autoUpdateEnabled: false,
       updateInterval: 1000, // 500ms
@@ -97,7 +104,17 @@ var app = new Vue({
         maxSamples: 200000,   // prune oldest beyond this
         totalSamples: 0,
         sizeBytes: 0,
+        usingIndexedDB: false,
+        db: null,
+        dbName: 'radiacode_samples',
+        storeName: 'samples_v1',
       },
+      // Samples table / UI state
+      samplesTableExpanded: false,
+      sampleRows: [], // last N rows for UI
+      sampleRowLimit: 200,
+      autoScrollSamples: true,
+      highlightNewSamples: true,
       // Sound status (null = unknown until first read)
       soundEnabled: null,
       // Reusable confirmation dialog state
@@ -532,6 +549,7 @@ var app = new Vue({
               this.doseRateTimeSeries.append(now, record.dose_rate);
             }
             
+            
             // Add to rates series
             this.rates_series[0].data.push([now, record.count_rate]);
             this.rates_series[1].data.push([now, record.dose_rate]);
@@ -556,7 +574,7 @@ var app = new Vue({
             this.updateStats(record.count_rate, record.dose_rate);
             
             // ----- Storage (recording) helpers -----
-            this.storeSample(now, record.count_rate, record.dose_rate);
+            this.storeSample(now, record);
             
             break; // Only process the first real-time record
           }
@@ -644,18 +662,47 @@ var app = new Vue({
     },
     // ----- Storage (recording) helpers -----
     loadStoredSamples() {
-      try {
-        const raw = localStorage.getItem(this.storage.key);
-        if (raw) {
-          const obj = JSON.parse(raw);
-          if (obj && Array.isArray(obj.samples)) {
-            this.storage.totalSamples = obj.samples.length;
-            this.storage.sizeBytes = raw.length;
+      // Attempt IndexedDB first, fallback to localStorage metrics
+      this.initIndexedDB().then(()=>{
+        this.refreshRecentSamples();
+      }).catch(err => {
+        this.log('⚠️ IndexedDB unavailable ('+err.message+'), using localStorage');
+        try {
+          const raw = localStorage.getItem(this.storage.key);
+          if (raw) {
+            const obj = JSON.parse(raw);
+            if (obj && Array.isArray(obj.samples)) {
+              this.storage.totalSamples = obj.samples.length;
+              this.storage.sizeBytes = raw.length;
+            }
           }
-        }
-      } catch (e) {
-        this.log('⚠️ Failed to load stored samples: ' + e.message);
-      }
+        } catch (e) { this.log('⚠️ Failed to load stored samples: ' + e.message); }
+      });
+    },
+    async initIndexedDB() {
+      if (this.storage.db) return;
+      if (!('indexedDB' in window)) throw new Error('No indexedDB in window');
+      const req = indexedDB.open(this.storage.dbName, 1);
+      return await new Promise((resolve, reject) => {
+        req.onerror = () => reject(req.error || new Error('open failed'));
+        req.onupgradeneeded = (e) => {
+          const db = req.result;
+          if (!db.objectStoreNames.contains(this.storage.storeName)) {
+            const store = db.createObjectStore(this.storage.storeName, {keyPath: 'id', autoIncrement: true});
+            store.createIndex('ts', 'ts');
+          }
+        };
+        req.onsuccess = () => {
+          this.storage.db = req.result;
+          this.storage.usingIndexedDB = true;
+          // Count existing rows quickly
+          const tx = this.storage.db.transaction(this.storage.storeName, 'readonly');
+            const store = tx.objectStore(this.storage.storeName);
+            const countReq = store.count();
+            countReq.onsuccess = () => { this.storage.totalSamples = countReq.result; };
+          resolve();
+        };
+      });
     },
     getStoredObject() {
       try {
@@ -664,30 +711,104 @@ var app = new Vue({
       } catch(_) {}
       return {version:1, samples:[]};
     },
-    storeSample(ts, cr, dr) {
+    storeSample(ts, record) {
       if (!this.storage.enabled) return;
-      this.storage.buffer.push([ts, Number(cr), Number(dr)]);
+      const row = {
+        ts,
+        cr: Number(record.count_rate),
+        dr: Number(record.dose_rate),
+        crErr: Number(record.count_rate_err),
+        drErr: Number(record.dose_rate_err),
+        flags: record.flags >>> 0,
+      };
+      // Push to UI list
+      const uiRow = {
+        id: ts + '_' + Math.random().toString(36).slice(2,8),
+        time: new Date(ts).toLocaleTimeString(),
+        cr: row.cr,
+        dr: row.dr,
+        crErr: row.crErr,
+        drErr: row.drErr,
+        flagsHex: '0x'+ row.flags.toString(16),
+        _flash: true,
+      };
+      this.sampleRows.push(uiRow);
+      if (this.sampleRows.length > this.sampleRowLimit) this.sampleRows.splice(0, this.sampleRows.length - this.sampleRowLimit);
+      // schedule flash removal
+      setTimeout(()=> { uiRow._flash = false; }, 800);
+      // Auto-scroll if enabled
+      this.$nextTick(()=> {
+        if (this.autoScrollSamples) {
+          const el = this.$refs.samplesScroll; if (el) el.scrollTop = el.scrollHeight;
+        }
+      });
+      // Buffer for persistence
+      this.storage.buffer.push(row);
       const now = Date.now();
       if (this.storage.buffer.length >= this.storage.maxBufferSize || (now - this.storage.lastFlush) >= this.storage.flushInterval) {
         this.flushStorage();
       }
     },
+    handleSamplesScroll() {
+      const el = this.$refs.samplesScroll; if (!el) return;
+      const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 5;
+      this.autoScrollSamples = atBottom;
+    },
+    async refreshRecentSamples() {
+      if (!this.storage.usingIndexedDB || !this.storage.db) return;
+      const tx = this.storage.db.transaction(this.storage.storeName, 'readonly');
+      const store = tx.objectStore(this.storage.storeName);
+      // Use a cursor from the end by collecting then slicing (simple approach)
+      const rows = [];
+      return await new Promise(resolve => {
+        store.openCursor().onsuccess = (e) => {
+          const cursor = e.target.result;
+          if (cursor) { rows.push(cursor.value); cursor.continue(); }
+          else {
+            const recent = rows.slice(-this.sampleRowLimit);
+            this.sampleRows = recent.map(r => ({
+              id: r.id,
+              time: new Date(r.ts).toLocaleTimeString(),
+              cr: r.cr,
+              dr: r.dr,
+              crErr: r.crErr,
+              drErr: r.drErr,
+              flagsHex: '0x'+ (r.flags>>>0).toString(16),
+              _flash: false,
+            }));
+            resolve();
+          }
+        };
+      });
+    },
     flushStorage(force) {
       if (!force && (!this.storage.buffer.length)) return;
       try {
-        const obj = this.getStoredObject();
-        // Append and prune if needed
-        for (const row of this.storage.buffer) obj.samples.push(row);
-        if (obj.samples.length > this.storage.maxSamples) {
-          const remove = obj.samples.length - this.storage.maxSamples;
-            obj.samples.splice(0, remove);
+        if (this.storage.usingIndexedDB && this.storage.db) {
+          const tx = this.storage.db.transaction(this.storage.storeName, 'readwrite');
+          const store = tx.objectStore(this.storage.storeName);
+          for (const row of this.storage.buffer) store.add(row);
+          // After commit, update counts & maybe prune
+          tx.oncomplete = () => {
+            this.storage.totalSamples += this.storage.buffer.length;
+            this.storage.buffer = [];
+            this.storage.lastFlush = Date.now();
+            // TODO: pruning strategy for IndexedDB (lazy)
+          };
+        } else {
+          const obj = this.getStoredObject();
+          for (const row of this.storage.buffer) obj.samples.push([row.ts, row.cr, row.dr, row.crErr, row.drErr, row.flags]);
+          if (obj.samples.length > this.storage.maxSamples) {
+            const remove = obj.samples.length - this.storage.maxSamples;
+              obj.samples.splice(0, remove);
+          }
+          const raw = JSON.stringify(obj);
+          localStorage.setItem(this.storage.key, raw);
+          this.storage.totalSamples = obj.samples.length;
+          this.storage.sizeBytes = raw.length;
+          this.storage.buffer = [];
+          this.storage.lastFlush = Date.now();
         }
-        const raw = JSON.stringify(obj);
-        localStorage.setItem(this.storage.key, raw);
-        this.storage.totalSamples = obj.samples.length;
-        this.storage.sizeBytes = raw.length;
-        this.storage.buffer = [];
-        this.storage.lastFlush = Date.now();
       } catch (e) {
         this.log('❌ Failed to flush storage: ' + e.message);
       }
@@ -699,18 +820,51 @@ var app = new Vue({
     },
     clearStoredSamples() {
       try {
-        localStorage.removeItem(this.storage.key);
-        this.storage.totalSamples = 0;
-        this.storage.sizeBytes = 0;
-        this.storage.buffer = [];
+        if (this.storage.usingIndexedDB && this.storage.db) {
+          const tx = this.storage.db.transaction(this.storage.storeName, 'readwrite');
+          const store = tx.objectStore(this.storage.storeName);
+          const clearReq = store.clear();
+          clearReq.onsuccess = () => {
+            this.storage.totalSamples = 0; this.sampleRows = []; this.storage.buffer = []; this.log('Stored samples cleared');
+          };
+        } else {
+          localStorage.removeItem(this.storage.key);
+          this.storage.totalSamples = 0;
+          this.storage.sizeBytes = 0;
+          this.storage.buffer = [];
+          this.sampleRows = [];
+        }
         this.log('Stored samples cleared');
       } catch(e) { this.log('❌ Clear failed: ' + e.message); }
     },
     exportStoredSamples() {
       try {
         this.flushStorage(true);
-        const obj = this.getStoredObject();
-        const blob = new Blob([JSON.stringify(obj)], {type:'application/json'});
+        let exportObj;
+        if (this.storage.usingIndexedDB && this.storage.db) {
+          // Read all rows (could be large) - simple approach
+          exportObj = {version:1, samples:[]};
+          const tx = this.storage.db.transaction(this.storage.storeName, 'readonly');
+          const store = tx.objectStore(this.storage.storeName);
+          const rows = [];
+          const p = new Promise(resolve => {
+            store.openCursor().onsuccess = (e) => { const c=e.target.result; if (c){ rows.push(c.value); c.continue(); } else resolve(); };
+          });
+          p.then(()=> {
+            exportObj.samples = rows.map(r=>[r.ts, r.cr, r.dr, r.crErr, r.drErr, r.flags]);
+            const blob = new Blob([JSON.stringify(exportObj)], {type:'application/json'});
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = 'radiacode_realtime_' + new Date().toISOString().replace(/[:.]/g,'-') + '.json';
+            document.body.appendChild(a); a.click(); a.remove();
+            setTimeout(()=>URL.revokeObjectURL(a.href), 1000);
+            this.log('Exported stored samples');
+          });
+          return;
+        } else {
+          exportObj = this.getStoredObject();
+        }
+        const blob = new Blob([JSON.stringify(exportObj)], {type:'application/json'});
         const a = document.createElement('a');
         a.href = URL.createObjectURL(blob);
         a.download = 'radiacode_realtime_' + new Date().toISOString().replace(/[:.]/g,'-') + '.json';
@@ -841,6 +995,28 @@ var app = new Vue({
       // Optionally restart auto-update
       this.toggleAutoUpdate();
       this.log('UI reloaded (device preserved).');
+  },
+    toggleCountErrorRange() {
+      this.showCountErrorRange = !this.showCountErrorRange;
+      if (!this.countRateChart) return;
+      if (this.showCountErrorRange) {
+        this.countRateChart.addTimeSeries(this.countRateUpperTimeSeries, {strokeStyle:'rgba(0,123,255,0.30)', lineWidth:1});
+        this.countRateChart.addTimeSeries(this.countRateLowerTimeSeries, {strokeStyle:'rgba(0,123,255,0.25)', lineWidth:1});
+      } else {
+        this.countRateChart.removeTimeSeries(this.countRateUpperTimeSeries);
+        this.countRateChart.removeTimeSeries(this.countRateLowerTimeSeries);
+      }
+    },
+    toggleDoseErrorRange() {
+      this.showDoseErrorRange = !this.showDoseErrorRange;
+      if (!this.doseRateChart) return;
+      if (this.showDoseErrorRange) {
+        this.doseRateChart.addTimeSeries(this.doseRateUpperTimeSeries, {strokeStyle:'rgba(40,167,69,0.30)', lineWidth:1});
+        this.doseRateChart.addTimeSeries(this.doseRateLowerTimeSeries, {strokeStyle:'rgba(40,167,69,0.25)', lineWidth:1});
+      } else {
+        this.doseRateChart.removeTimeSeries(this.doseRateUpperTimeSeries);
+        this.doseRateChart.removeTimeSeries(this.doseRateLowerTimeSeries);
+      }
     }
   },
 });

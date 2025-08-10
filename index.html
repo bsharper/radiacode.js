@@ -80,12 +80,12 @@
         <button 
           class="device-button auto-update" 
           @click="toggleAutoUpdate">
-          🔄 Auto-update: {{ autoUpdateEnabled ? 'ON' : 'OFF' }}
+          Auto-update: {{ autoUpdateEnabled ? 'ON' : 'OFF' }}
         </button>
         <button 
           class="device-button alarm-settings" 
           @click="loadAlarmSettings">
-          ⚙ Alarm Settings
+          View Alarm Settings
         </button>
         <button 
           class="device-button sound-toggle" 
@@ -96,18 +96,18 @@
         <button 
           class="device-button spectrum-update" 
           @click="updateSpectrum">
-          🔃 Update Spectrum
+          Update Spectrum
         </button>
         <button 
           class="device-button spectrum-reset" 
           @click="requestSpectrumReset()">
-          ♻ Reset Spectrum
+          Reset Spectrum
         </button>
         <button 
           class="device-button rates-clear" 
           @click="requestRatesClear()" 
           :disabled="!(rates_series[0]?.data?.length)">
-          🧹 Clear Rates
+          Clear Rates
         </button>
         <button
           class="device-button reload-ui"
@@ -235,18 +235,75 @@
 
   <!-- Recording / Storage Section -->
   <div class="storage-section" v-if="isConnected">
-    <h3>Recording</h3>
-    <div>
-      Samples stored: {{ storage.totalSamples }}
-      <span v-if="storage.sizeBytes"> (~{{ (storage.sizeBytes/1024).toFixed(1) }} KB)</span>
-      <span v-if="storage.buffer.length"> | Buffer: {{ storage.buffer.length }}</span>
-      <span v-if="!storage.enabled" style="color:#c00; margin-left:8px;">(Paused)</span>
+    <div class="storage-head">
+      <div class="storage-head-left">
+        <h3 style="margin:0; display:flex; align-items:center; gap:10px;">
+          <span>Recording</span>
+          <span class="record-indicator" :class="{on: storage.enabled}">
+            <span class="dot"></span><span class="label">{{ storage.enabled ? 'ON' : 'OFF' }}</span>
+          </span>
+        </h3>
+        <div class="storage-meta">
+          <span title="Total samples persisted">Samples: <strong>{{ storage.totalSamples }}</strong></span>
+          <span v-if="storage.sizeBytes" title="Approx persisted size"> · Size ~{{ (storage.sizeBytes/1024).toFixed(1) }} KB</span>
+          <span v-if="storage.buffer.length" title="Buffered (not yet flushed)"> · Buffer {{ storage.buffer.length }}</span>
+          <span v-if="!storage.enabled" class="paused-tag">Paused</span>
+          <span v-if="storage.usingIndexedDB" class="idb-tag" title="IndexedDB active">IndexedDB</span>
+          <span v-else class="fallback-tag" title="Fallback to localStorage">localStorage</span>
+        </div>
+      </div>
+      <div class="storage-actions">
+        <button class="btn" @click="toggleStorage">{{ storage.enabled ? 'Pause' : 'Resume' }}</button>
+        <button class="btn" @click="exportStoredSamples" :disabled="!storage.totalSamples">Export JSON</button>
+        <button class="btn warn" @click="clearStoredSamples" :disabled="!storage.totalSamples">Clear</button>
+        <button class="btn ghost" @click="samplesTableExpanded = !samplesTableExpanded" :disabled="!storage.totalSamples">
+          {{ samplesTableExpanded ? 'Hide' : 'Show' }} Table
+        </button>
+      </div>
     </div>
-    <div style="margin-top:6px; display:flex; gap:8px; flex-wrap:wrap;">
-      <button @click="toggleStorage">{{ storage.enabled ? 'Pause Recording' : 'Resume Recording' }}</button>
-      <button @click="exportStoredSamples" :disabled="!storage.totalSamples">Export JSON</button>
-      <button @click="clearStoredSamples" :disabled="!storage.totalSamples">Clear Stored</button>
-    </div>
+    <transition name="fade-slide">
+      <div v-show="samplesTableExpanded" class="samples-wrapper">
+        <div class="samples-toolbar">
+          <span>Recent Samples (last {{ sampleRowLimit }} shown)</span>
+          <div class="toolbar-right">
+            <label class="chk"><input type="checkbox" v-model="autoScrollSamples"> Auto-scroll</label>
+            <label class="chk"><input type="checkbox" v-model="highlightNewSamples"> Highlight new</label>
+            <select v-model.number="sampleRowLimit">
+              <option :value="100">100</option>
+              <option :value="200">200</option>
+              <option :value="500">500</option>
+            </select>
+          </div>
+        </div>
+        <div class="samples-table-scroll" ref="samplesScroll" @scroll.passive="handleSamplesScroll">
+          <table class="samples-table">
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th title="Count Rate">CR (CPS)</th>
+                <th title="Dose Rate">DR (µSv/h)</th>
+                <th title="Count Rate Error">CR ±</th>
+                <th title="Dose Rate Error">DR ±</th>
+                <th>Flags</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="row in sampleRows" :key="row.id" :class="{'new-sample': highlightNewSamples && row._flash}">
+                <td>{{ row.time }}</td>
+                <td>{{ row.cr.toFixed(2) }}</td>
+                <td>{{ row.dr.toFixed(6) }}</td>
+                <td>{{ row.crErr.toFixed(2) }}</td>
+                <td>{{ row.drErr.toFixed(6) }}</td>
+                <td>{{ row.flagsHex }}</td>
+              </tr>
+              <tr v-if="!sampleRows.length">
+                <td colspan="6" style="text-align:center; padding:12px; color:#888;">No samples yet</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </transition>
   </div>
 
   <!-- Reusable Confirmation Modal -->
