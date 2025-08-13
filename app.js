@@ -1,3 +1,4 @@
+
 const common_options = {
   chart: {
     animations: {enabled: false},
@@ -45,6 +46,13 @@ var app = new Vue({
         doseRate: 0,
         countRateError: 0,
         doseRateError: 0
+      },
+      
+      // Device status from RareData
+      deviceStatus: {
+        batteryLevel: null, // 0-100%
+        temperature: null, // in Celsius
+        hasRareData: false
       },
       
       // Smoothie chart
@@ -158,6 +166,38 @@ var app = new Vue({
       }
       return this.logMessages.slice(-this.maxVisibleMessages);
     },
+    
+    // Dynamic battery display properties
+    batteryIcon() {
+      if (this.deviceStatus.batteryLevel === null) return '🔋';
+      
+      const level = this.deviceStatus.batteryLevel;
+      if (level <= 5) return '🪫';  // Empty battery
+      if (level <= 15) return '🔋'; // Low battery (red)
+      if (level <= 50) return '🔋'; // Medium battery (orange)
+      return '🔋'; // Good battery (green)
+    },
+    
+    batteryClass() {
+      if (this.deviceStatus.batteryLevel === null) return 'battery-unknown';
+      
+      const level = this.deviceStatus.batteryLevel;
+      if (level <= 15) return 'battery-critical';
+      if (level <= 30) return 'battery-low';
+      if (level <= 60) return 'battery-medium';
+      return 'battery-good';
+    },
+    
+    batteryColor() {
+      if (this.deviceStatus.batteryLevel === null) return '#6c757d';
+      
+      const level = this.deviceStatus.batteryLevel;
+      if (level <= 15) return '#dc3545'; // Red for critical
+      if (level <= 30) return '#fd7e14'; // Orange for low
+      if (level <= 60) return '#ffc107'; // Yellow for medium
+      return '#28a745'; // Green for good
+    },
+    
     spectrumChartOptions() {
       const a0 = this.spectrum_coef[0], a1 = this.spectrum_coef[1], a2 = this.spectrum_coef[2];
       const fmt = this.spectrum_energy ? ((c) => (a0 + a1*c + a2*c*c).toFixed(0)) : undefined;
@@ -207,6 +247,11 @@ var app = new Vue({
           }
         }
       });
+    },
+
+    // Convert Celsius to Fahrenheit
+    celsiusToFahrenheit(celsius) {
+      return celsius * 9/5 + 32;
     },
 
     handleLogScroll() {
@@ -260,7 +305,7 @@ var app = new Vue({
         this.log('✅ Connected successfully via Bluetooth');
         window.device = this.device; // For debugging
         await this.initializeDevice();
-        
+        await this.device.set_device_on(1);
       } catch (error) {
         this.log(`❌ Bluetooth connection failed: ${error.message}`);
         this.connectionStatus = 'Disconnected';
@@ -342,12 +387,13 @@ var app = new Vue({
   // Load sound status
   await this.loadSoundStatus();
         
+  // Preload historical stored samples (if any) into rates chart before starting auto-update
+  await this.loadHistoricalRates();
+  
   // Initialize smoothie chart first (so we can optionally backfill it)
   this.initializeSmoothieChart();
 
-  // Preload historical stored samples (if any) into rates chart before starting auto-update
-  await this.loadHistoricalRates();
-
+  
   // Start auto-update by default (after historical data is in place)
   this.toggleAutoUpdate();
 
@@ -568,6 +614,7 @@ var app = new Vue({
     },
 
     async updateRatesData() {
+      let realTimeUpdated = false;
       if (!this.isConnected || !this.device) return;
       try {
         const data = await this.device.data_buf();
@@ -575,6 +622,11 @@ var app = new Vue({
         // Process real-time data
         for (const record of data) {
           if (record instanceof RealTimeData) {
+
+            if (realTimeUpdated) {
+              continue;
+            }
+
             // Debug logging - more detailed
             //this.log(`RealTimeData: CR=${record.count_rate.toFixed(2)} CPS, DR=${record.dose_rate.toFixed(6)} µSv/h, flags=0x${record.flags.toString(16)}`);
             this.realTimeDataMessages++;
@@ -584,6 +636,7 @@ var app = new Vue({
             if (this.realTimeDataMessages === this.realTimeDataMessagesMax) {
               this.log(`RealTimeData: stopping display after ${this.realTimeDataMessagesMax} messages`);
             }
+            realTimeUpdated = true;
             // Update current data
             this.currentData.countRate = record.count_rate;
             this.currentData.doseRate = record.dose_rate;
@@ -617,6 +670,9 @@ var app = new Vue({
             
             // Trigger chart update
             this.rates_series = [...this.rates_series];
+
+            window.rates_series = this.rates_series; // for debugging
+
             
             // ----- Min/Max update helper -----
             this.updateStats(record.count_rate, record.dose_rate);
@@ -624,7 +680,21 @@ var app = new Vue({
             // ----- Storage (recording) helpers -----
             this.storeSample(now, record);
             
-            break; // Only process the first real-time record
+            //break; // Only process the first real-time record
+          } else if (record instanceof RareData) {
+            // Rare data - log it
+            /*
+            RareData fields:
+        this.dt = dt;                          // Timestamp of the status reading
+        this.duration = duration;              // Duration of dose accumulation in seconds
+        this.dose = dose;                      // Accumulated radiation dose
+        this.temperature = temperature;        // Device temperature reading
+        this.charge_level = charge_level;      // Battery charge level
+        this.flags = flags;    
+            */
+            this.log(`✅ ✅ ✅ RareData: ${record.constructor.name} - dt=${record.dt}, duration=${record.duration}s, dose=${record.dose.toFixed(6)} µSv, temperature=${record.temperature.toFixed(1)}°C, charge_level=${record.charge_level}%`);
+            //this.log(`RareData: ${record.constructor.name} with flags=0x${record.flags.toString(16)}`);
+            
           }
         }
         
@@ -1008,6 +1078,44 @@ var app = new Vue({
         this.log('❌ Failed to set sound: ' + e.message);
       }
     },
+    
+    // Test method to simulate battery levels for development/testing
+    testBatteryLevels() {
+      if (!this.isConnected) {
+        this.log('⚠️ Device must be connected to test battery levels');
+        return;
+      }
+      
+      const levels = [5, 15, 25, 45, 75, 95]; // Critical, low, medium, good levels
+      let index = 0;
+      
+      // Set initial test data
+      this.deviceStatus.hasRareData = true;
+      this.deviceStatus.temperature = 23.5; // Test temperature
+      
+      const cycleTest = () => {
+        this.deviceStatus.batteryLevel = levels[index];
+        this.log(`🔋 Test battery level: ${levels[index]}% (${this.batteryClass})`);
+        index = (index + 1) % levels.length;
+        
+        if (index === 0) {
+          this.log('Battery level test cycle completed');
+          // Reset to null after test
+          setTimeout(() => {
+            this.deviceStatus.batteryLevel = null;
+            this.deviceStatus.temperature = null;
+            this.deviceStatus.hasRareData = false;
+            this.log('Test data cleared');
+          }, 2000);
+        } else {
+          setTimeout(cycleTest, 2000); // Change every 2 seconds
+        }
+      };
+      
+      this.log('Starting battery level test cycle...');
+      cycleTest();
+    },
+    
     reloadUI() {
       // Preserve current device & essential flags
       if (!this.device) {

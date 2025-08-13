@@ -702,7 +702,7 @@ class RadiaCodeBluetoothTransport extends RadiaCodeTransport {
         this.responseSize -= value.length;
         
         if (this.responseSize < 0) {
-            console.error('Response size mismatch');
+            //console.error('Response size mismatch');
             if (this.responsePromiseReject) this.responsePromiseReject(new Error('Response size mismatch'));
             this.responseBuffer = new Uint8Array(0);
             this.responseSize = 0;
@@ -1074,7 +1074,6 @@ function decodeDataBuffer(buffer, baseTime) {
     const br = new BytesBuffer(buffer);
     const ret = [];
     let nextSeq = null;
-    
     while (br.size() >= 7) {
         const seq = br.readUint8();
         const eid = br.readUint8();
@@ -1084,8 +1083,9 @@ function decodeDataBuffer(buffer, baseTime) {
         const dt = new Date(baseTime.getTime() + tsOffset * 10);
         
         if (nextSeq !== null && nextSeq !== seq) {
-            console.warn(`Sequence jump while processing eid=${eid} gid=${gid}, expect:${nextSeq}, got:${seq}`);
-            break;
+            //console.warn(`Sequence jump while processing eid=${eid} gid=${gid}, expect:${nextSeq}, got:${seq}`);
+            //continue;
+            //break;
         }
         
         nextSeq = (seq + 1) % 256;
@@ -1141,13 +1141,16 @@ function decodeDataBuffer(buffer, baseTime) {
                 charge_level / 100,
                 flags
             );
-            window.latestRareData = rd; // Store latest rare data globally
+            if (typeof window !== 'undefined') {
+                window.latestRareData = rd; // Store latest rare data globally
+            }
             console.log(`RareData: dt=${dt}, duration=${duration}, dose=${dose}, temperature=${temperature}, charge_level=${charge_level}, flags=${flags}`);
+            
             ret.push(rd);
         } else {
             // Skip unknown data types
-            //console.warn(`Unknown data type: eid=${eid}, gid=${gid}`);
-            break;
+            //console.log(`Unknown data type: eid=${eid}, gid=${gid}`);
+            continue
         }
     }
     
@@ -1278,7 +1281,7 @@ class RadiaCodeDevice {
         fullRequestView.setUint32(0, requestPayload.length, true);
         new Uint8Array(fullRequest, 4).set(requestPayload);
 
-    this.log(`Sending request: command=${command}, seqNo=${reqSeqNo}, argsLength=${argsBytes.length}`);
+        this.log(`Sending request: command=${command}, seqNo=${reqSeqNo}, argsLength=${argsBytes.length}`);
         
         await this.transport.send(new Uint8Array(fullRequest));
 
@@ -1293,7 +1296,7 @@ class RadiaCodeDevice {
             }
         }
         
-    this.log(`Received response: command=${responseHeader[0]}, seqNo=${responseHeader[3]}, length=${response.size()}`);
+        this.log(`Received response: command=${responseHeader[0]}, seqNo=${responseHeader[3]}, length=${response.size()}`);
         
         if (!headersMatch) {
             const reqHex = Array.from(requestHeaderBytes).map(b => `0x${b.toString(16).padStart(2, '0')}`).join(' ');
@@ -1510,6 +1513,7 @@ class RadiaCodeDevice {
      */
     async data_buf() {
         const data = await this.readVirtualBinary(VS.DATA_BUF);
+        //console.log(data);
         return decodeDataBuffer(data, this.baseTime);
     }
 

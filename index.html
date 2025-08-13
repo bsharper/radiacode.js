@@ -22,7 +22,25 @@
 <div id="app">
   <!-- Connection Controls -->
   <div class="connection-controls">
-    <h3>Device Connection</h3>
+    <div class="connection-header">
+      <h3>Device Connection</h3>
+      
+      <!-- Device Status Indicators (Battery & Temperature) -->
+      <div class="device-status-indicators" v-if="isConnected && deviceStatus.hasRareData">
+        <div class="battery-indicator" 
+             v-if="deviceStatus.batteryLevel !== null" 
+             :class="batteryClass"
+             :style="{ borderColor: batteryColor }"
+             :title="`Battery: ${deviceStatus.batteryLevel}%`">
+          <span class="battery-icon">{{ batteryIcon }}</span>
+          <span class="battery-percentage">{{ deviceStatus.batteryLevel }}%</span>
+        </div>
+        <div class="temperature-indicator" v-if="deviceStatus.temperature !== null" :title="`Temperature: ${deviceStatus.temperature.toFixed(1)}°C / ${celsiusToFahrenheit(deviceStatus.temperature).toFixed(1)}°F`">
+          <span class="temperature-icon">🌡️</span>
+          <span class="temperature-values">{{ deviceStatus.temperature.toFixed(1) }}°C / {{ celsiusToFahrenheit(deviceStatus.temperature).toFixed(1) }}°F</span>
+        </div>
+      </div>
+    </div>
     <div class="connection-row">
       <div class="connection-buttons">
         <button 
@@ -118,6 +136,12 @@
           class="device-button reload-ui"
           @click="reloadUI">
           🔁 Reload UI
+        </button>
+        <button
+          class="device-button test-battery"
+          @click="testBatteryLevels"
+          title="Test different battery level indicators">
+          🔋 Test Battery
         </button>
       </div>
     </div>

@@ -1,6 +1,6 @@
 {
   "name": "radiacode.js",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "radiacode.js library for connecting to RadiaCode devices",
   "main": "radiacode.js",
   "scripts": {
