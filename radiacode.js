@@ -19,7 +19,7 @@
 // ============================================================================
 
 // Library version
-const RADIACODE_JS_VERSION = '1.0.1';
+const RADIACODE_JS_VERSION = '1.0.4';
 
 // Command types (from Python implementation)
 const COMMAND = {
