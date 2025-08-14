@@ -692,6 +692,9 @@ var app = new Vue({
         this.charge_level = charge_level;      // Battery charge level
         this.flags = flags;    
             */
+            this.deviceStatus.batteryLevel = record.charge_level;
+            this.deviceStatus.temperature = record.temperature;
+            this.deviceStatus.hasRareData = true;
             this.log(`✅ ✅ ✅ RareData: ${record.constructor.name} - dt=${record.dt}, duration=${record.duration}s, dose=${record.dose.toFixed(6)} µSv, temperature=${record.temperature.toFixed(1)}°C, charge_level=${record.charge_level}%`);
             //this.log(`RareData: ${record.constructor.name} with flags=0x${record.flags.toString(16)}`);
             
