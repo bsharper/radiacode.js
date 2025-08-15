@@ -8,6 +8,59 @@ const common_options = {
   grid: {xaxis: {lines: {show: true}}},
   dataLabels: {enabled: false},
 };
+
+// Reasonable value filter to reject wild sensor readings
+function isReasonableValue(countRate, doseRate, previousValues = null) {
+  // Define reasonable ranges based on typical RadiaCode operation
+  const MAX_COUNT_RATE = 100000;  // 100k CPS is extremely high but possible
+  const MIN_COUNT_RATE = 0;       // Can't be negative
+  const MAX_DOSE_RATE = 1000;     // 1000 µSv/h is very high but possible in extreme conditions  
+  const MIN_DOSE_RATE = 0;        // Can't be negative
+  
+  // Check for obvious bad values
+  if (!isFinite(countRate) || !isFinite(doseRate)) {
+    console.warn(`Rejecting non-finite values: CR=${countRate}, DR=${doseRate}`);
+    return false;
+  }
+  
+  // Check count rate bounds
+  if (countRate < MIN_COUNT_RATE || countRate > MAX_COUNT_RATE) {
+    console.warn(`Rejecting out-of-bounds count rate: CR=${countRate} (limits: ${MIN_COUNT_RATE}-${MAX_COUNT_RATE})`);
+    return false;
+  }
+  
+  // Check dose rate bounds
+  if (doseRate < MIN_DOSE_RATE || doseRate > MAX_DOSE_RATE) {
+    console.warn(`Rejecting out-of-bounds dose rate: DR=${doseRate} (limits: ${MIN_DOSE_RATE}-${MAX_DOSE_RATE})`);
+    return false;
+  }
+  
+  // Optional: Spike detection based on recent values
+  if (previousValues && previousValues.length >= 3) {
+    const recentCR = previousValues.slice(-3).map(v => v.cr);
+    const recentDR = previousValues.slice(-3).map(v => v.dr);
+    
+    const avgCR = recentCR.reduce((a, b) => a + b, 0) / recentCR.length;
+    const avgDR = recentDR.reduce((a, b) => a + b, 0) / recentDR.length;
+    
+    // Reject values that are more than 100x higher than recent average
+    const CR_SPIKE_FACTOR = 100;
+    const DR_SPIKE_FACTOR = 100;
+    
+    if (avgCR > 0 && countRate > avgCR * CR_SPIKE_FACTOR) {
+      console.warn(`Rejecting CR spike: ${countRate} vs recent avg ${avgCR.toFixed(2)} (>${CR_SPIKE_FACTOR}x)`);
+      return false;
+    }
+    
+    if (avgDR > 0 && doseRate > avgDR * DR_SPIKE_FACTOR) {
+      console.warn(`Rejecting DR spike: ${doseRate} vs recent avg ${avgDR.toFixed(6)} (>${DR_SPIKE_FACTOR}x)`);
+      return false;
+    }
+  }
+  
+  return true;
+}
+
 (function(){
     try {
     var el = document.getElementById('lib-version');
@@ -47,6 +100,9 @@ var app = new Vue({
         countRateError: 0,
         doseRateError: 0
       },
+      
+      // Recent values for spike detection filtering
+      recentValues: [],
       
       // Device status from RareData
       deviceStatus: {
@@ -584,6 +640,7 @@ var app = new Vue({
           countRateError: 0,
           doseRateError: 0
         };
+        this.recentValues = []; // Clear recent values for filtering
         window.currentData = this.currentData;  
         
         this.resetStats();
@@ -636,6 +693,19 @@ var app = new Vue({
             if (this.realTimeDataMessages === this.realTimeDataMessagesMax) {
               this.log(`RealTimeData: stopping display after ${this.realTimeDataMessagesMax} messages`);
             }
+            
+            // Filter out unreasonable values before processing
+            if (!isReasonableValue(record.count_rate, record.dose_rate, this.recentValues)) {
+              this.log(`⚠️ FILTERED OUT unreasonable values: CR=${record.count_rate}, DR=${record.dose_rate}`);
+              continue; // Skip this record
+            }
+            
+            // Add current values to recent values for spike detection
+            this.recentValues.push({cr: record.count_rate, dr: record.dose_rate});
+            if (this.recentValues.length > 10) {
+              this.recentValues = this.recentValues.slice(-10); // Keep only last 10 values
+            }
+            
             realTimeUpdated = true;
             // Update current data
             this.currentData.countRate = record.count_rate;
@@ -998,6 +1068,7 @@ var app = new Vue({
       this.rates_series[0].data = [];
       this.rates_series[1].data = [];
       this.rates_series = [...this.rates_series];
+      this.recentValues = []; // Clear recent values for filtering
       this.resetStats();
     },
     openConfirm(options) {

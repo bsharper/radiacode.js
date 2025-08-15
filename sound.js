@@ -2,10 +2,10 @@ let running = false;
 let timerId = null;
 
 
-function updateCpsHandler (event) {
+async function updateCpsHandler (event) {
         //console.log('Received event:', event.detail);
         const cps = event.detail.cps;
-        initializeAudio(); 
+        await initializeAudio(); 
         runGeiger(cps);
 };
 
@@ -29,12 +29,21 @@ function runGeiger(cps) {
 
 
 let audioCtx = null;
-let clickPool = null;
-let poolIndex = 0;
-const POOL_SIZE = 8;
-const oscTypes = ['sine', 'square', 'sawtooth', 'triangle'];
+let clickBuffer = null;
 
-function initializeAudio() {
+async function loadAudioFile(url) {
+  try {
+    const response = await fetch(url);
+    const arrayBuffer = await response.arrayBuffer();
+    const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+    return audioBuffer;
+  } catch (error) {
+    console.error('Error loading audio file:', error);
+    return null;
+  }
+}
+
+async function initializeAudio() {
   if (audioCtx) return; // Already initialized
   
   audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -44,36 +53,33 @@ function initializeAudio() {
     document.body.addEventListener('click', () => audioCtx.resume(), { once: true });
   }
 
-  clickPool = Array.from({ length: POOL_SIZE }, (el, i) => {
-    const osc = audioCtx.createOscillator();
-    osc.type = // oscTypes[i%oscTypes.length] //oscTypes[Math.floor(Math.random() * oscTypes.length)];
-    osc.type = "square";
-    osc.frequency.setValueAtTime(3800 + parseInt(Math.random() * 400), audioCtx.currentTime);
-
-    const gain = audioCtx.createGain();
-    gain.gain.setValueAtTime(0, audioCtx.currentTime);
-
-    osc.connect(gain).connect(audioCtx.destination);
-    osc.start(); 
-
-    return { osc, gain };
-  });
+  // Load the gc.wav file
+  clickBuffer = await loadAudioFile('gc.wav');
+  if (!clickBuffer) {
+    console.error('Failed to load gc.wav file');
+  }
 }
 
 function playClickSound() {
-  if (!audioCtx || !clickPool) {
-    initializeAudio();
+  if (!audioCtx || !clickBuffer) {
+    console.warn('Audio context or click buffer not ready');
+    return;
   }
   
-  const node = clickPool[poolIndex];
-  poolIndex = (poolIndex + 1) % POOL_SIZE;
-
-  const now = audioCtx.currentTime;
-
-  node.gain.gain.cancelScheduledValues(now);
-  node.gain.gain.setValueAtTime(0.5, now);
-  node.gain.gain.exponentialRampToValueAtTime(0.001, now + 0.01);
-  node.gain.gain.setValueAtTime(0, now + 0.015);
+  // Create a new buffer source for each play
+  const source = audioCtx.createBufferSource();
+  source.buffer = clickBuffer;
+  
+  // Optional: Add gain control for volume
+  const gainNode = audioCtx.createGain();
+  gainNode.gain.setValueAtTime(0.5, audioCtx.currentTime);
+  
+  // Connect the audio graph
+  source.connect(gainNode);
+  gainNode.connect(audioCtx.destination);
+  
+  // Play the sound
+  source.start(0);
 }
 
 function startSoundEvent() {
