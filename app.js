@@ -9,6 +9,11 @@ const common_options = {
   dataLabels: {enabled: false},
 };
 
+function ptimeout(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+
 // Reasonable value filter to reject wild sensor readings
 function isReasonableValue(countRate, doseRate, previousValues = null) {
   // Define reasonable ranges based on typical RadiaCode operation
@@ -81,6 +86,9 @@ var app = new Vue({
       isConnecting: false,
       connectionStatus: 'Disconnected',
       connectionStatusText: 'Not connected to device',
+      
+      // UI Configuration
+      preserveLastValuesOnDisconnect: true, // Show last known values when disconnected
       
       // Device information
       deviceInfo: {
@@ -361,7 +369,6 @@ var app = new Vue({
         this.log('✅ Connected successfully via Bluetooth');
         window.device = this.device; // For debugging
         await this.initializeDevice();
-        await this.device.set_device_on(1);
       } catch (error) {
         this.log(`❌ Bluetooth connection failed: ${error.message}`);
         this.connectionStatus = 'Disconnected';
@@ -394,6 +401,7 @@ var app = new Vue({
         this.log('✅ Connected successfully via USB');
         
         await this.initializeDevice();
+  
         
       } catch (error) {
         this.log(`❌ USB connection failed: ${error.message}`);
@@ -436,22 +444,24 @@ var app = new Vue({
         //   }
         // }
         
-        // Get initial spectrum
-        this.log('Getting initial spectrum...');
-        await this.updateSpectrum();
 
-  // Load sound status
-  await this.loadSoundStatus();
+        // Load sound status
+        await this.loadSoundStatus();
+              
+        // Preload historical stored samples (if any) into rates chart before starting auto-update
+        await this.loadHistoricalRates();
         
-  // Preload historical stored samples (if any) into rates chart before starting auto-update
-  await this.loadHistoricalRates();
-  
-  // Initialize smoothie chart first (so we can optionally backfill it)
-  this.initializeSmoothieChart();
+        // Initialize smoothie chart first (so we can optionally backfill it)
+        this.initializeSmoothieChart();
 
+        // Start auto-update by default (after historical data is in place)
+        this.toggleAutoUpdate();
+
+          // Get initial spectrum
+        this.log('Getting initial spectrum...');
+        this.updateSpectrum();
   
-  // Start auto-update by default (after historical data is in place)
-  this.toggleAutoUpdate();
+        
 
         this.log('✅ Device initialization completed successfully');
         
@@ -633,13 +643,15 @@ var app = new Vue({
         this.alarmLimits = null;
         window.deviceInfo = deviceInfo;
         
-        // Reset current data
-        this.currentData = {
-          countRate: 0,
-          doseRate: 0,
-          countRateError: 0,
-          doseRateError: 0
-        };
+        // Reset current data only if not preserving last values
+        if (!this.preserveLastValuesOnDisconnect) {
+          this.currentData = {
+            countRate: 0,
+            doseRate: 0,
+            countRateError: 0,
+            doseRateError: 0
+          };
+        }
         this.recentValues = []; // Clear recent values for filtering
         window.currentData = this.currentData;  
         

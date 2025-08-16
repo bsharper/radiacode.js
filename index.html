@@ -96,8 +96,8 @@
   </div>
 
   <!-- Device Panel: Controls + Information Side by Side -->
-  <div class="device-panel" v-if="isConnected">
-    <div class="device-controls">
+  <div class="device-panel">
+    <div class="device-controls" :class="{ 'disconnected': !isConnected }">
       <h3 style="margin-top:0;">Device Controls</h3>
       <div class="device-control-buttons">
         <button 
@@ -144,21 +144,30 @@
           🔋 Test Battery
         </button>
       </div>
+      
+      <!-- UI Configuration -->
+      <div class="ui-config">
+        <h4 style="margin-top: 15px; margin-bottom: 10px; font-size: 14px;">UI Settings</h4>
+        <label class="config-checkbox">
+          <input type="checkbox" v-model="preserveLastValuesOnDisconnect">
+          Show last values when disconnected
+        </label>
+      </div>
     </div>
     <div class="device-info">
       <h3 style="margin-top:0;">Device Information</h3>
       <div class="device-info-grid">
         <div class="device-info-item">
           <label>Serial Number:</label>
-          <span>{{ deviceInfo.serialNumber || 'Loading...' }}</span>
+          <span>{{ deviceInfo.serialNumber || (isConnected ? 'Loading...' : 'Not connected') }}</span>
         </div>
         <div class="device-info-item">
           <label>Firmware Version:</label>
-          <span>{{ deviceInfo.firmwareVersion || 'Loading...' }}</span>
+          <span>{{ deviceInfo.firmwareVersion || (isConnected ? 'Loading...' : 'Not connected') }}</span>
         </div>
         <div class="device-info-item">
           <label>Connection Type:</label>
-          <span>{{ deviceInfo.connectionType || 'Unknown' }}</span>
+          <span>{{ deviceInfo.connectionType || (isConnected ? 'Unknown' : 'Not connected') }}</span>
         </div>
         <div class="device-info-item">
           <label>Last Update:</label>
@@ -169,9 +178,9 @@
   </div>
   
   <!-- Alarm Limits -->
-  <div class="alarm-limits" v-if="isConnected && alarmLimits">
+  <div class="alarm-limits" v-show="alarmLimits" :class="{ 'disconnected': !isConnected }">
     <h3>Alarm Limits</h3>
-    <div class="alarm-limits-grid">
+    <div class="alarm-limits-grid" v-if="alarmLimits">
       <div class="alarm-item">
         <label>Count Rate L1/L2:</label>
         <span>{{ alarmLimits.l1_count_rate.toFixed(1) }} / {{ alarmLimits.l2_count_rate.toFixed(1) }} {{ alarmLimits.count_unit }}</span>
@@ -188,10 +197,16 @@
   </div>
 
   <!-- Real-time Data -->
-  <div class="realtime-data" v-if="isConnected">
+  <div class="realtime-data" :class="{ 'disconnected': !isConnected }">
     <h3>Real-time Data</h3>
+    <div v-if="!isConnected && !preserveLastValuesOnDisconnect" class="disconnected-message">
+      <p>No device connected. Connect a device to see real-time data.</p>
+    </div>
+    <div v-if="!isConnected && preserveLastValuesOnDisconnect && (currentData.countRate > 0 || currentData.doseRate > 0)" class="stale-data-warning">
+      <p>⚠️ Showing last known values from disconnected device</p>
+    </div>
     <div class="realtime-grid">
-      <div class="realtime-item">
+      <div class="realtime-item" v-show="isConnected || preserveLastValuesOnDisconnect || currentData.countRate > 0 || currentData.doseRate > 0">
         <div class="label">Count Rate</div>
         <span class="value">
           {{ currentData.countRate.toFixed(2) }}
@@ -203,7 +218,7 @@
           <span class="pill-max">Max {{ stats.countRate.max == null ? '-' : stats.countRate.max.toFixed(2) }}</span>
         </div>
       </div>
-      <div class="realtime-item">
+      <div class="realtime-item" v-show="isConnected || preserveLastValuesOnDisconnect || currentData.countRate > 0 || currentData.doseRate > 0">
         <div class="label">Dose Rate</div>
         <span class="value">
           {{ currentData.doseRate.toFixed(4) }}
@@ -216,7 +231,7 @@
         </div>
       </div>
     </div>
-    <div class="realtime-grid">
+    <div class="realtime-grid" v-show="isConnected || preserveLastValuesOnDisconnect">
       <div class="chart-container">
         <h4 style="margin-top: 0; color: #155724;">Count Rate (CPS)</h4>
         <canvas id="countRateChart"></canvas>
@@ -263,7 +278,7 @@
   </div>
 
   <!-- Recording / Storage Section -->
-  <div class="storage-section" v-if="isConnected">
+  <div class="storage-section" v-show="isConnected">
     <div class="storage-head">
       <div class="storage-head-left">
         <h3 style="margin:0; display:flex; align-items:center; gap:10px;">

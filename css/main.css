@@ -586,3 +586,89 @@ body {
     min-width: auto;
   }
 }
+
+/* Disconnected state styling */
+.device-panel.disconnected,
+.realtime-data.disconnected,
+.alarm-limits.disconnected {
+  opacity: 0.8;
+  border-left: 4px solid #dc3545;
+  position: relative;
+}
+
+.device-panel.disconnected::before,
+.realtime-data.disconnected::before,
+.alarm-limits.disconnected::before {
+  content: "DISCONNECTED";
+  position: absolute;
+  top: 8px;
+  right: 15px;
+  background: #dc3545;
+  color: white;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 9px;
+  font-weight: bold;
+  z-index: 10;
+  letter-spacing: 0.5px;
+}
+
+.device-controls.disconnected .device-button {
+  opacity: 0.5;
+  pointer-events: none;
+  cursor: not-allowed;
+}
+
+.device-controls.disconnected .device-button.connect-bluetooth,
+.device-controls.disconnected .device-button.connect-usb {
+  opacity: 1;
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+/* UI Configuration styling */
+.ui-config {
+  border-top: 1px solid #e0e0e0;
+  padding-top: 10px;
+  margin-top: 15px;
+}
+
+.config-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  cursor: pointer;
+  justify-content: flex-start;
+}
+
+.config-checkbox input[type="checkbox"] {
+  margin: 0;
+}
+
+/* Disconnected message styling */
+.disconnected-message,
+.stale-data-warning {
+  background: #fff3cd;
+  border: 1px solid #ffeaa7;
+  border-radius: 4px;
+  padding: 10px;
+  margin-bottom: 15px;
+  text-align: center;
+}
+
+.disconnected-message p,
+.stale-data-warning p {
+  margin: 0;
+  color: #856404;
+  font-size: 14px;
+}
+
+.stale-data-warning {
+  background: #f8d7da;
+  border-color: #f5c6cb;
+}
+
+.stale-data-warning p {
+  color: #721c24;
+}

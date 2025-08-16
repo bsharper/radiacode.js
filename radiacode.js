@@ -19,7 +19,7 @@
 // ============================================================================
 
 // Library version
-const RADIACODE_JS_VERSION = '1.0.4';
+const RADIACODE_JS_VERSION = '1.1.0';
 
 // Command types (from Python implementation)
 const COMMAND = {
@@ -631,6 +631,57 @@ class RadiaCodeBluetoothTransport extends RadiaCodeTransport {
         this.responsePromiseReject = null;
         
         this.maxPacketSize = 18;
+        
+        // Request queue system to prevent "GATT operation already in progress" errors
+        this.requestQueue = [];
+        this.isProcessingQueue = false;
+    }
+
+    /**
+     * Process the request queue sequentially to avoid GATT operation conflicts
+     */
+    async processQueue() {
+        if (this.isProcessingQueue) return;
+        
+        this.isProcessingQueue = true;
+        
+        while (this.requestQueue.length > 0) {
+            const request = this.requestQueue.shift();
+            
+            try {
+                if (request.type === 'send') {
+                    await this._sendInternal(request.data);
+                    request.resolve();
+                } else if (request.type === 'receive') {
+                    const result = await this._receiveInternal(request.timeout);
+                    request.resolve(result);
+                }
+            } catch (error) {
+                request.reject(error);
+            }
+        }
+        
+        this.isProcessingQueue = false;
+    }
+
+    /**
+     * Queue a request to be processed sequentially
+     */
+    queueRequest(type, data = null, timeout = 10000) {
+        return new Promise((resolve, reject) => {
+            this.requestQueue.push({
+                type,
+                data,
+                timeout,
+                resolve,
+                reject
+            });
+            
+            // Start processing if not already processing
+            this.processQueue().catch(error => {
+                console.error('Queue processing error:', error);
+            });
+        });
     }
 
     static isSupported() {
@@ -722,6 +773,17 @@ class RadiaCodeBluetoothTransport extends RadiaCodeTransport {
     }
 
     async send(data) {
+        return this.queueRequest('send', data);
+    }
+
+    async receive(timeout = 10000) {
+        return this.queueRequest('receive', null, timeout);
+    }
+
+    /**
+     * Internal send method that performs the actual GATT write operation
+     */
+    async _sendInternal(data) {
         if (!this.isConnected) throw new ConnectionClosed('Device not connected');
         if (this.isClosing) throw new ConnectionClosed('Connection is closing');
 
@@ -732,7 +794,10 @@ class RadiaCodeBluetoothTransport extends RadiaCodeTransport {
         }
     }
 
-    async receive(timeout = 10000) {
+    /**
+     * Internal receive method that performs the actual response waiting
+     */
+    async _receiveInternal(timeout = 10000) {
         if (!this.isConnected) throw new ConnectionClosed('Device not connected');
         if (this.isClosing) throw new ConnectionClosed('Connection is closing');
         if (this.responsePromiseResolve) throw new Error('Concurrent receive operations are not supported.');
@@ -778,6 +843,13 @@ class RadiaCodeBluetoothTransport extends RadiaCodeTransport {
         this.pendingResponse = null;
         this.responsePromiseResolve = null;
         this.responsePromiseReject = null;
+        
+        // Clear the request queue and reject any pending requests
+        while (this.requestQueue.length > 0) {
+            const request = this.requestQueue.shift();
+            request.reject(new ConnectionClosed('Device disconnected'));
+        }
+        this.isProcessingQueue = false;
     }
 
     connected() {
@@ -809,11 +881,62 @@ class RadiaCodeUSBTransport extends RadiaCodeTransport {
         // Fixed endpoint numbers matching Python implementation
         this.endpointOut = 1;    // Write endpoint (0x1 in Python)
         this.endpointIn = 1;     // Read endpoint (0x81 in Python, but WebUSB uses just the number)
+        
+        // Request queue system to prevent USB operation conflicts
+        this.requestQueue = [];
+        this.isProcessingQueue = false;
     }
 
     static isSupported() {
         const nav = (typeof navigator !== 'undefined') ? navigator : (typeof globalThis !== 'undefined' ? globalThis.navigator : undefined);
         return !!(nav && 'usb' in nav);
+    }
+
+    /**
+     * Process the request queue sequentially to avoid USB operation conflicts
+     */
+    async processQueue() {
+        if (this.isProcessingQueue) return;
+        
+        this.isProcessingQueue = true;
+        
+        while (this.requestQueue.length > 0) {
+            const request = this.requestQueue.shift();
+            
+            try {
+                if (request.type === 'send') {
+                    await this._sendInternal(request.data);
+                    request.resolve();
+                } else if (request.type === 'receive') {
+                    const result = await this._receiveInternal(request.timeout);
+                    request.resolve(result);
+                }
+            } catch (error) {
+                request.reject(error);
+            }
+        }
+        
+        this.isProcessingQueue = false;
+    }
+
+    /**
+     * Queue a request to be processed sequentially
+     */
+    queueRequest(type, data = null, timeout = 10000) {
+        return new Promise((resolve, reject) => {
+            this.requestQueue.push({
+                type,
+                data,
+                timeout,
+                resolve,
+                reject
+            });
+            
+            // Start processing if not already processing
+            this.processQueue().catch(error => {
+                console.error('USB queue processing error:', error);
+            });
+        });
     }
 
     async connect() {
@@ -864,7 +987,7 @@ class RadiaCodeUSBTransport extends RadiaCodeTransport {
 
             //await this.clearPendingData();
 
-            await new Promise(resolve => setTimeout(resolve, 50));
+            //await new Promise(resolve => setTimeout(resolve, 50));
 
             this.isConnected = true;
             this.usbLog('RadiaCode USB device connected successfully');
@@ -877,7 +1000,7 @@ class RadiaCodeUSBTransport extends RadiaCodeTransport {
     }
 
     async clearPendingData() {
-    this.usbLog(`Clearing pending data from USB device...`);
+        this.usbLog(`Clearing pending data from USB device...`);
         let clearedBytes = 0;
         let attempts = 0;
         
@@ -922,6 +1045,17 @@ class RadiaCodeUSBTransport extends RadiaCodeTransport {
     }
 
     async send(data) {
+        return this.queueRequest('send', data);
+    }
+
+    async receive(timeout = 10000) {
+        return this.queueRequest('receive', null, timeout);
+    }
+
+    /**
+     * Internal send method that performs the actual USB transfer
+     */
+    async _sendInternal(data) {
         if (!this.isConnected) throw new ConnectionClosed('Device not connected');
         if (this.isClosing) throw new ConnectionClosed('Connection is closing');
 
@@ -943,7 +1077,10 @@ class RadiaCodeUSBTransport extends RadiaCodeTransport {
         }
     }
 
-    async receive(timeout = 10000) {
+    /**
+     * Internal receive method that performs the actual USB transfer
+     */
+    async _receiveInternal(timeout = 10000) {
         if (!this.isConnected) throw new ConnectionClosed('Device not connected');
         if (this.isClosing) throw new ConnectionClosed('Connection is closing');
 
@@ -1056,6 +1193,13 @@ class RadiaCodeUSBTransport extends RadiaCodeTransport {
         super.cleanup();
         this.device = null;
         this.interface = null;
+        
+        // Clear the request queue and reject any pending requests
+        while (this.requestQueue.length > 0) {
+            const request = this.requestQueue.shift();
+            request.reject(new ConnectionClosed('Device disconnected'));
+        }
+        this.isProcessingQueue = false;
     }
 
     connected() {
@@ -1079,6 +1223,7 @@ function decodeDataBuffer(buffer, baseTime) {
         const eid = br.readUint8();
         const gid = br.readUint8();
         const tsOffset = br.readInt32LE();
+        //console.log(`eid=${eid}, gid=${gid}, seq=${seq}, tsOffset=${tsOffset}`);
         
         const dt = new Date(baseTime.getTime() + tsOffset * 10);
         
@@ -1245,15 +1390,69 @@ class RadiaCodeDevice {
         this.log = createLogger('radiacode:device');
         this.commandLookup = {};
         this.deviceTextMessage = "";
+        
+        // Command execution queue to handle multiple simultaneous API calls
+        this.commandQueue = [];
+        this.isExecutingCommand = false;
+        
         for (const [key, value] of Object.entries(COMMAND)) {
             this.commandLookup[value] = key;
         }
     }
 
     /**
-     * Execute a command on the device
+     * Process command queue sequentially to avoid conflicts
+     */
+    async processCommandQueue() {
+        if (this.isExecutingCommand) return;
+        
+        this.isExecutingCommand = true;
+        
+        while (this.commandQueue.length > 0) {
+            const request = this.commandQueue.shift();
+            
+            try {
+                const result = await this._executeInternal(request.command, request.args, request.timeout);
+                request.resolve(result);
+            } catch (error) {
+                request.reject(error);
+            }
+        }
+        
+        this.isExecutingCommand = false;
+    }
+
+    /**
+     * Queue a command execution request
+     */
+    queueCommand(command, args = null, timeout = 10000) {
+        return new Promise((resolve, reject) => {
+            this.commandQueue.push({
+                command,
+                args,
+                timeout,
+                resolve,
+                reject
+            });
+            
+            // Start processing if not already processing
+            this.processCommandQueue().catch(error => {
+                console.error('Command queue processing error:', error);
+            });
+        });
+    }
+
+    /**
+     * Execute a command on the device (queued version)
      */
     async execute(command, args = null, timeout = 10000) {
+        return this.queueCommand(command, args, timeout);
+    }
+
+    /**
+     * Internal execute method that performs the actual command execution
+     */
+    async _executeInternal(command, args = null, timeout = 10000) {
         {
             const cmdName = this.commandLookup[command] || command;
             this.log(`Executing command: ${cmdName}, args: ${args ? args.length : 0} bytes`);
